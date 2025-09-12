@@ -117,8 +117,26 @@ export class Line {
    * Met à jour la représentation visuelle
    */
   updateVisual(): void {
+    // Validation des points avant mise à jour
+    const isValidPoint = (point: THREE.Vector3) => {
+      return isFinite(point.x) && isFinite(point.y) && isFinite(point.z);
+    };
+    
+    if (!isValidPoint(this.pointA) || !isValidPoint(this.pointB)) {
+      console.warn('⚠️ Points de ligne invalides, ignoré mise à jour visuelle');
+      return;
+    }
+    
     // Calcul de la caténaire si ligne molle
     const points = this.calculateDisplayPoints();
+    
+    // Validation des points calculés
+    if (points.some(p => !isValidPoint(p))) {
+      console.warn('⚠️ Points de caténaire invalides, utilisation ligne droite');
+      this.visualLine.geometry.setFromPoints([this.pointA, this.pointB]);
+      return;
+    }
+    
     this.visualLine.geometry.setFromPoints(points);
   }
 
@@ -175,6 +193,12 @@ export class LineSystem extends C_objet {
 
   constructor(lineLength: number = CONFIG.lines.defaultLength, config: C_objetConfig = {}) {
     super(config);
+
+    // Initialiser les positions avec des valeurs par défaut raisonnables
+    this.leftHandlePos.set(-0.3, 1.4, 0);    // Poignée gauche  
+    this.rightHandlePos.set(0.3, 1.4, 0);    // Poignée droite
+    this.leftKitePos.set(-0.15, 7, -10);     // Point kite gauche estimé
+    this.rightKitePos.set(0.15, 7, -10);     // Point kite droit estimé
 
     // Créer les deux lignes avec couleurs distinctes
     this.leftLine = new Line(
@@ -430,6 +454,13 @@ export class LineSystem extends C_objet {
   }
 
   private updateHandlePositions(controlRotation: number, pilotPosition: THREE.Vector3): void {
+    // Validation des entrées
+    if (!isFinite(controlRotation) || !pilotPosition || 
+        !isFinite(pilotPosition.x) || !isFinite(pilotPosition.y) || !isFinite(pilotPosition.z)) {
+      console.warn('⚠️ updateHandlePositions: paramètres invalides', { controlRotation, pilotPosition });
+      return;
+    }
+
     // GÉOMÉTRIE DE LA BARRE : barre de 60cm avec poignées aux extrémités
     const barHalfWidth = CONFIG.controlBar.width * 0.5; // 30cm de chaque côté
     const barRight = new THREE.Vector3(1, 0, 0);
@@ -455,11 +486,25 @@ export class LineSystem extends C_objet {
     const ctrlLeft = kite.getPoint('CTRL_GAUCHE');
     const ctrlRight = kite.getPoint('CTRL_DROIT');
 
-    if (ctrlLeft && ctrlRight) {
-      // Positions mondiales des points de contrôle
-      this.leftKitePos.copy(ctrlLeft).applyQuaternion(kite.getRotation()).add(kite.getPosition());
-      this.rightKitePos.copy(ctrlRight).applyQuaternion(kite.getRotation()).add(kite.getPosition());
+    if (!ctrlLeft || !ctrlRight) {
+      console.warn('⚠️ updateKiteControlPoints: points de contrôle manquants', { ctrlLeft, ctrlRight });
+      return;
     }
+
+    const kitePos = kite.getPosition();
+    const kiteRot = kite.getRotation();
+
+    // Validation des valeurs du kite
+    if (!kitePos || !kiteRot || 
+        !isFinite(kitePos.x) || !isFinite(kitePos.y) || !isFinite(kitePos.z) ||
+        !isFinite(kiteRot.x) || !isFinite(kiteRot.y) || !isFinite(kiteRot.z) || !isFinite(kiteRot.w)) {
+      console.warn('⚠️ updateKiteControlPoints: position/rotation kite invalide', { kitePos, kiteRot });
+      return;
+    }
+
+    // Positions mondiales des points de contrôle
+    this.leftKitePos.copy(ctrlLeft).applyQuaternion(kiteRot).add(kitePos);
+    this.rightKitePos.copy(ctrlRight).applyQuaternion(kiteRot).add(kitePos);
   }
 
   private resolveKitePosition(

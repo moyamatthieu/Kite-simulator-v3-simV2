@@ -166,14 +166,14 @@ export class SimulationApp {
         // Créer la légende de debug
         this.createDebugLegend();
 
-        // Configurer le vent à 300 km/h
+        // Configurer le vent à une vitesse plus raisonnable
         this.setWindParams({
-            speed: 300, // 300 km/h
+            speed: 25, // 25 km/h - vitesse raisonnable pour débuter
             direction: 0, // Direction par défaut
-            turbulence: 0.1 // Légère turbulence
+            turbulence: 3 // Légère turbulence
         });
 
-        console.log('🌪️ Vent configuré à 300 km/h');
+        console.log('🌪️ Vent configuré à 25 km/h');
 
         // Redimensionnement
         window.addEventListener('resize', () => this.onResize(container));
