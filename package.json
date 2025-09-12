@@ -1,0 +1,40 @@
+{
+  "name": "kite-simulator-v1",
+  "version": "1.0.0",
+  "description": "Simulateur de cerf-volant avec physique réaliste et émergente",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "test": "vitest",
+    "clean": "rm -rf dist node_modules"
+  },
+  "keywords": [
+    "kite",
+    "simulation",
+    "physics",
+    "three.js",
+    "typescript",
+    "aerodynamics"
+  ],
+  "author": "Claude Code",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/three": "^0.160.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4",
+    "typescript": "^5.3.3",
+    "vite": "^5.4.19",
+    "vitest": "^1.2.2"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}
