@@ -1,317 +1,300 @@
-/**
- * Kite.ts - Cerf-volant modulaire utilisant les composants Point, Frame et Sail
- *
- * Architecture modulaire avec composition d'objets :
- * - Point : Points anatomiques du cerf-volant
- * - Frame : Structure rigide (cadre)
- * - Sail : Surfaces portantes (voiles)
- *
- * Compatible avec simulationV8.ts
- */
 
 import * as THREE from 'three';
-import { C_objet, C_objetConfig } from './C_objet';
-import { Point, PointConfig } from './point';
-import { Frame, FrameConfig } from './frame';
-import { Sail, SailConfig } from './sail';
+import { z } from 'zod';
+import { C_objet, C_objetConfig } from '../class/C_objet';
+import { Point, PointConfig } from './components/point';
+import { Frame, Frame_Config } from './components/frame';
+import { Sail, SailConfig } from './components/sail';
+import { C_label } from '../class/C_label';
+import { KiteControlPoint } from '../enum';
+import { KiteState } from '../core/constants';
 
-/**
- * Géométrie du cerf-volant - Définition des points et surfaces
- */
 export class KiteGeometry {
-    // Points anatomiques du cerf-volant (coordonnées relatives)
-    static readonly POINTS = {
-        NEZ: new THREE.Vector3(0, 0.65, 0),                      // Bout pointu en haut
-        SPINE_BAS: new THREE.Vector3(0, 0, 0),                   // Centre en bas
-        BORD_GAUCHE: new THREE.Vector3(-0.825, 0, 0),            // Extrémité aile gauche
-        BORD_DROIT: new THREE.Vector3(0.825, 0, 0),              // Extrémité aile droite
-        WHISKER_GAUCHE: new THREE.Vector3(-0.4125, 0.1, -0.15),  // Stabilisateur gauche
-        WHISKER_DROIT: new THREE.Vector3(0.4125, 0.1, -0.15),    // Stabilisateur droit
-        CTRL_GAUCHE: new THREE.Vector3(-0.15, 0.3, 0.4),         // Attache ligne gauche
-        CTRL_DROIT: new THREE.Vector3(0.15, 0.3, 0.4)            // Attache ligne droite
-    };
+    static readonly POINTS = new Map<string, [number, number, number]>([
+        ["NEZ", [0, 0.65, 0]],
+        ['SPINE_BAS', [0, 0, 0]],
+        ['CENTRE', [0, 0.1625, 0]],
+        ['BORD_GAUCHE', [-0.825, 0, 0]],
+        ['BORD_DROIT', [0.825, 0, 0]],
+        ['INTER_GAUCHE', [-0.4125, 0.1625, 0]],
+        ['INTER_DROIT', [0.4125, 0.1625, 0]],
+        ['FIX_GAUCHE', [-0.275, 0.1625, 0]],
+        ['FIX_DROIT', [0.275, 0.1625, 0]],
+        ['WHISKER_GAUCHE', [-0.4125, 0.1, -0.15]],
+        ['WHISKER_DROIT', [0.4125, 0.1, -0.15]],
+        [KiteControlPoint.CTRL_GAUCHE, [-0.15, 0.3, 0.4]],
+        [KiteControlPoint.CTRL_DROIT, [0.15, 0.3, 0.4]]
+    ]);
 
-    // Définition des surfaces triangulaires
-    static readonly SURFACES = [
-        {
-            name: 'surface_gauche_haute',
-            vertices: ['NEZ', 'BORD_GAUCHE', 'WHISKER_GAUCHE'],
-            area: 0.23,
-            color: '#ff3333'
-        },
-        {
-            name: 'surface_gauche_basse',
-            vertices: ['NEZ', 'WHISKER_GAUCHE', 'SPINE_BAS'],
-            area: 0.11,
-            color: '#ff6666'
-        },
-        {
-            name: 'surface_droite_haute',
-            vertices: ['NEZ', 'BORD_DROIT', 'WHISKER_DROIT'],
-            area: 0.23,
-            color: '#ff3333'
-        },
-        {
-            name: 'surface_droite_basse',
-            vertices: ['NEZ', 'WHISKER_DROIT', 'SPINE_BAS'],
-            area: 0.11,
-            color: '#ff6666'
-        }
-    ];
-
-    // Définition des éléments de structure
     static readonly FRAME_ELEMENTS = [
         {
             name: 'bord_attaque_gauche',
-            points: ['NEZ', 'BORD_GAUCHE'],
-            thickness: 0.03,
+            points: [KiteControlPoint.NEZ, 'BORD_GAUCHE'] as [string, string],
+            radius: 0.003,
             color: 0x2a2a2a
         },
         {
             name: 'bord_attaque_droit',
-            points: ['NEZ', 'BORD_DROIT'],
-            thickness: 0.03,
+            points: [KiteControlPoint.NEZ, 'BORD_DROIT'] as [string, string],
+            radius: 0.003,
             color: 0x2a2a2a
         },
         {
             name: 'spine_centrale',
-            points: ['NEZ', 'SPINE_BAS'],
-            thickness: 0.03,
+            points: [KiteControlPoint.NEZ, 'SPINE_BAS'] as [string, string],
+            radius: 0.003,
             color: 0x2a2a2a
         },
         {
+            name: 'spreader',
+            points: ['INTER_GAUCHE', 'INTER_DROIT'] as [string, string],
+            radius: 0.0025,
+            color: 0x333333
+        },
+        {
             name: 'whisker_gauche',
-            points: ['BORD_GAUCHE', 'WHISKER_GAUCHE'],
-            thickness: 0.02,
+            points: ['FIX_GAUCHE', 'WHISKER_GAUCHE'] as [string, string],
+            radius: 0.002,
             color: 0x444444
         },
         {
             name: 'whisker_droit',
-            points: ['BORD_DROIT', 'WHISKER_DROIT'],
-            thickness: 0.02,
+            points: ['FIX_DROIT', 'WHISKER_DROIT'] as [string, string],
+            radius: 0.002,
             color: 0x444444
         }
     ];
 
-    static readonly TOTAL_AREA = 0.68; // Surface totale en m²
+    static readonly SURFACES = [
+        {
+            name: 'surface_gauche_haute',
+            vertices: [KiteControlPoint.NEZ, 'INTER_GAUCHE', 'BORD_GAUCHE'] as [string, string, string],
+            color: 0xff3333
+        },
+        {
+            name: 'surface_gauche_basse',
+            vertices: ['INTER_GAUCHE', 'CENTRE', 'SPINE_BAS'] as [string, string, string],
+            color: 0xff6666
+        },
+        {
+            name: 'surface_droite_haute',
+            vertices: [KiteControlPoint.NEZ, 'BORD_DROIT', 'INTER_DROIT'] as [string, string, string],
+            color: 0xff3333
+        },
+        {
+            name: 'surface_droite_basse',
+            vertices: ['INTER_DROIT', 'SPINE_BAS', 'CENTRE'] as [string, string, string],
+            color: 0xff6666
+        }
+    ];
+
+    static readonly TOTAL_AREA = 0.68;
 }
 
 export interface KiteConfig extends C_objetConfig {
-    width?: number;
-    height?: number;
-    depth?: number;
     showPoints?: boolean;
     showFrame?: boolean;
     showSails?: boolean;
+    showLabels?: boolean;
     sailColor?: number;
     frameColor?: number;
     pointSize?: number;
     aerodynamic?: boolean;
-    mass?: number;
 }
 
-/**
- * Configuration par défaut du cerf-volant
- */
 const DefaultKiteConfig: KiteConfig = {
-    // Héritées de C_objetConfig
     name: 'Kite',
     position: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Euler(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
     visible: true,
-    
-    // Spécifiques au Kite
-    width: 1.65,
-    height: 0.65,
-    depth: 0.3,
     showPoints: true,
     showFrame: true,
     showSails: true,
+    showLabels: false,
     sailColor: 0xff3333,
     frameColor: 0x444444,
-    pointSize: 0.02,
-    aerodynamic: true,
-    mass: 1.5
+    pointSize: 0.015,
+    aerodynamic: true
 };
 
-/**
- * Cerf-volant modulaire composé d'objets Point, Frame et Sail
- */
 export class Kite extends C_objet {
-    // Composants modulaires
     private points: Map<string, Point> = new Map();
     private frames: Frame[] = [];
     private sails: Sail[] = [];
+    private labels: Map<string, C_label> = new Map();
     private bridleLines: THREE.Group | null = null;
-    private bridleLengthFactor: number = 1.0;
 
-    // Configuration typée
     public kiteConfig: KiteConfig;
+    public state: KiteState;
+    public previousPosition: THREE.Vector3;
 
     constructor(config: Partial<KiteConfig> = {}) {
         const fullConfig = { ...DefaultKiteConfig, ...config };
         super(fullConfig);
         this.kiteConfig = fullConfig;
-        
-        // Initialiser le cerf-volant
-        this.initialize();
+
+        this.state = {
+            position: this.get_position().clone(),
+            velocity: new THREE.Vector3(),
+            angularVelocity: new THREE.Vector3(),
+            orientation: this.get_group().quaternion.clone()
+        };
+
+        this.previousPosition = this.get_position().clone();
     }
 
-    /**
-     * Initialise le cerf-volant (création des points, cadre, voiles, etc.)
-     */
-    private initialize(): void {
+    protected _init(): void {
+        super._init();
+        console.log(`🪁 Kite ${this.name} initialisé`);
+    }
+
+    protected _enter_tree(): void {
+        super._enter_tree();
         this.createPoints();
         this.createFrame();
         this.createSails();
         this.createBridleLines();
+        this.createLabels();
+        console.log(`🪁 Kite ${this.name} ajouté au scene tree`);
     }
 
-    /**
-     * Crée les points anatomiques du cerf-volant
-     */
+    protected _ready(): void {
+        super._ready();
+        console.log(`🪁 Kite ${this.name} prêt (surface: ${KiteGeometry.TOTAL_AREA}m²)`);
+    }
+
+    protected _exit_tree(): void {
+        super._exit_tree();
+        this.cleanup();
+        console.log(`🪁 Kite ${this.name} retiré du scene tree`);
+    }
+
     private createPoints(): void {
         if (!this.kiteConfig.showPoints) return;
 
-        Object.entries(KiteGeometry.POINTS).forEach(([name, position]) => {
+        KiteGeometry.POINTS.forEach(([x, y, z], name) => {
             const pointConfig: PointConfig = {
-                position: position,
-                radius: this.kiteConfig.pointSize,
+                position: new THREE.Vector3(x, y, z),
+                radius: this.kiteConfig.pointSize || 0.015,
                 name: `Point_${name}`
             };
 
-            // Couleurs spécifiques pour différents types de points
-            if (name === 'NEZ') {
-                pointConfig.color = 0xff0000; // Rouge pour le nez
+            if (name === KiteControlPoint.NEZ) {
+                pointConfig.color = 0xff0000;
             } else if (name.includes('CTRL')) {
-                pointConfig.color = 0xdc143c; // Rouge foncé pour les points de contrôle
+                pointConfig.color = 0xdc143c;
             } else if (name.includes('WHISKER')) {
-                pointConfig.color = 0x8a2be2; // Violet pour les whiskers
+                pointConfig.color = 0x8a2be2;
             } else {
-                pointConfig.color = 0x00ff00; // Vert pour les autres points
+                pointConfig.color = 0x00ff00;
             }
 
             const point = new Point(pointConfig);
             this.points.set(name, point);
-            this.group.add(point.group); // Utiliser point.group au lieu de getGroup()
+            this.add_child(point);
         });
     }
 
-    /**
-     * Crée la structure rigide du cerf-volant
-     */
     private createFrame(): void {
         if (!this.kiteConfig.showFrame) return;
 
-        // Créer un cadre composite pour chaque élément de structure
         KiteGeometry.FRAME_ELEMENTS.forEach(element => {
-            const startPoint = KiteGeometry.POINTS[element.points[0] as keyof typeof KiteGeometry.POINTS];
-            const endPoint = KiteGeometry.POINTS[element.points[1] as keyof typeof KiteGeometry.POINTS];
+            const pointA = this.points.get(element.points[0]);
+            const pointB = this.points.get(element.points[1]);
 
-            if (startPoint && endPoint) {
-                const center = startPoint.clone().add(endPoint).multiplyScalar(0.5);
-                const length = startPoint.distanceTo(endPoint);
-                
-                const frameConfig: FrameConfig = {
-                    width: length,
-                    height: element.thickness,
-                    depth: element.thickness,
+            if (pointA && pointB) {
+                const frameConfig: Frame_Config = {
+                    pointA: pointA,
+                    pointB: pointB,
+                    radius: element.radius,
                     color: element.color,
                     name: element.name,
-                    filled: false,
-                    position: center
+                    material: 'standard',
+                    metalness: 0.1,
+                    roughness: 0.8
                 };
 
                 const frameElement = new Frame(frameConfig);
-
-                // Orienter vers la direction de l'élément
-                const direction = endPoint.clone().sub(startPoint).normalize();
-                const quaternion = new THREE.Quaternion();
-                quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction);
-                frameElement.group.setRotationFromQuaternion(quaternion);
-
                 this.frames.push(frameElement);
-                this.group.add(frameElement.group);
+                this.add_child(frameElement);
             }
         });
     }
 
     /**
-     * Crée les surfaces portantes (voiles) avec géométrie personnalisée
+     * Crée les voiles du cerf-volant en validant la configuration avec Zod et en gérant explicitement les ressources Three.js.
+     * Utilise un typage strict et documente les erreurs potentielles.
      */
     private createSails(): void {
-        if (!this.kiteConfig.showSails) return;
+        if (!this.kiteConfig.showSails) {
+            console.log('🚫 Voiles désactivées dans la config');
+            return;
+        }
 
-        KiteGeometry.SURFACES.forEach((surface, index) => {
-            // Récupérer les positions réelles des sommets
-            const vertices = surface.vertices.map(vertexName => {
-                const point = KiteGeometry.POINTS[vertexName as keyof typeof KiteGeometry.POINTS];
-                return point || new THREE.Vector3();
+        console.log(`🌟 Création de ${KiteGeometry.SURFACES.length} voiles...`);
+
+        KiteGeometry.SURFACES.forEach(surface => {
+            // Validation Zod du schéma de surface
+            const surfaceSchema = z.object({
+                name: z.string(),
+                color: z.string(),
+                vertices: z.array(z.string()),
+            });
+            const parseResult = surfaceSchema.safeParse(surface);
+            if (!parseResult.success) {
+                console.error(`❌ Surface ${surface.name} invalide :`, parseResult.error);
+                return;
+            }
+
+            const surfacePoints: Point[] = [];
+            surface.vertices.forEach(vertexName => {
+                const existingPoint = this.points.get(vertexName);
+                if (existingPoint) {
+                    surfacePoints.push(existingPoint);
+                } else {
+                    console.warn(`⚠️ Point ${vertexName} non trouvé pour la surface ${surface.name}`);
+                }
             });
 
-            if (vertices.length >= 3) {
-                // Créer une géométrie triangulaire personnalisée
-                const geometry = new THREE.BufferGeometry();
-                
-                // Positions des vertices (dans l'ordre correct pour Three.js)
-                const positions = new Float32Array([
-                    vertices[0].x, vertices[0].y, vertices[0].z,
-                    vertices[1].x, vertices[1].y, vertices[1].z,
-                    vertices[2].x, vertices[2].y, vertices[2].z
-                ]);
-
-                // UVs pour la texture
-                const uvs = new Float32Array([
-                    0, 0,   // vertex 0
-                    1, 0,   // vertex 1
-                    0.5, 1  // vertex 2
-                ]);
-
-                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-                geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-                geometry.computeVertexNormals();
-
-                // Matériau
-                const material = new THREE.MeshStandardMaterial({
-                    color: parseInt(surface.color.replace('#', ''), 16),
-                    transparent: true,
-                    opacity: 0.8,
-                    side: THREE.DoubleSide,
-                    roughness: 0.1,
-                    metalness: 0.0
+            if (surfacePoints.length >= 3) {
+                // Validation Zod du SailConfig
+                const sailConfigSchema = z.object({
+                    points: z.array(z.any()),
+                    triangles: z.array(z.tuple([z.number(), z.number(), z.number()])),
+                    color: z.string(),
+                    opacity: z.number().min(0).max(1),
+                    doubleSided: z.boolean(),
+                    aerodynamic: z.boolean(),
+                    name: z.string(),
                 });
-
-                // Créer le mesh
-                const sailMesh = new THREE.Mesh(geometry, material);
-                sailMesh.name = surface.name;
-                sailMesh.castShadow = true;
-                sailMesh.receiveShadow = true;
-
-                // Créer un groupe pour cette voile (compatible avec Sail)
-                const sailGroup = new THREE.Group();
-                sailGroup.name = surface.name;
-                sailGroup.add(sailMesh);
-
-                // Simuler un objet Sail pour compatibilité
-                const sailObject = {
-                    group: sailGroup,
-                    name: surface.name,
-                    dispose: () => {
-                        geometry.dispose();
-                        material.dispose();
-                    }
+                const sailConfig: SailConfig = {
+                    points: surfacePoints,
+                    triangles: [[0, 1, 2]],
+                    color: surface.color,
+                    opacity: 0.8,
+                    doubleSided: true,
+                    aerodynamic: this.kiteConfig.aerodynamic,
+                    name: surface.name
                 };
+                const sailConfigResult = sailConfigSchema.safeParse(sailConfig);
+                if (!sailConfigResult.success) {
+                    console.error(`❌ SailConfig invalide pour ${surface.name} :`, sailConfigResult.error);
+                    return;
+                }
 
-                this.sails.push(sailObject as any);
-                this.group.add(sailGroup);
+                const sail = new Sail(sailConfig);
+                this.sails.push(sail);
+                this.add_child(sail);
+                console.log(`⛵ Voile ${surface.name} créée et ajoutée avec ${surfacePoints.length} points`);
+            } else {
+                console.warn(`⚠️ Surface ${surface.name} n'a que ${surfacePoints.length} points`);
             }
         });
+
+        console.log(`✅ ${this.sails.length} voiles créées au total`);
     }
 
-    /**
-     * Crée les lignes de bridage
-     */
     private createBridleLines(): void {
         if (this.bridleLines) {
             this.group.remove(this.bridleLines);
@@ -320,74 +303,118 @@ export class Kite extends C_objet {
         this.bridleLines = new THREE.Group();
         this.bridleLines.name = 'BridleLines';
 
-        const nez = KiteGeometry.POINTS.NEZ;
-        const ctrlGauche = KiteGeometry.POINTS.CTRL_GAUCHE;
-        const ctrlDroit = KiteGeometry.POINTS.CTRL_DROIT;
+        const nezCoords = KiteGeometry.POINTS.get(KiteControlPoint.NEZ);
+        const ctrlGaucheCoords = KiteGeometry.POINTS.get(KiteControlPoint.CTRL_GAUCHE);
+        const ctrlDroitCoords = KiteGeometry.POINTS.get(KiteControlPoint.CTRL_DROIT);
 
-        // Bride gauche
-        const leftGeometry = new THREE.BufferGeometry().setFromPoints([nez, ctrlGauche]);
-        const leftLine = new THREE.Line(
-            leftGeometry,
-            new THREE.LineBasicMaterial({ color: 0x666666, linewidth: 1 })
-        );
-        leftLine.name = 'BridleLeft';
-        this.bridleLines.add(leftLine);
+        if (nezCoords && ctrlGaucheCoords && ctrlDroitCoords) {
+            const nez = new THREE.Vector3(...nezCoords);
+            const ctrlGauche = new THREE.Vector3(...ctrlGaucheCoords);
+            const ctrlDroit = new THREE.Vector3(...ctrlDroitCoords);
 
-        // Bride droite
-        const rightGeometry = new THREE.BufferGeometry().setFromPoints([nez, ctrlDroit]);
-        const rightLine = new THREE.Line(
-            rightGeometry,
-            new THREE.LineBasicMaterial({ color: 0x666666, linewidth: 1 })
-        );
-        rightLine.name = 'BridleRight';
-        this.bridleLines.add(rightLine);
+            const leftGeometry = new THREE.BufferGeometry().setFromPoints([nez, ctrlGauche]);
+            const leftLine = new THREE.Line(
+                leftGeometry,
+                new THREE.LineBasicMaterial({ color: 0x666666, linewidth: 1 })
+            );
+            leftLine.name = 'BridleLeft';
+            this.bridleLines.add(leftLine);
 
-        this.group.add(this.bridleLines);
-    }
+            const rightGeometry = new THREE.BufferGeometry().setFromPoints([nez, ctrlDroit]);
+            const rightLine = new THREE.Line(
+                rightGeometry,
+                new THREE.LineBasicMaterial({ color: 0x666666, linewidth: 1 })
+            );
+            rightLine.name = 'BridleRight';
+            this.bridleLines.add(rightLine);
 
-    /**
-     * Obtient un point par son nom (compatible avec simulationV8)
-     */
-    public getPoint(name: string): THREE.Vector3 | null {
-        const staticPoint = KiteGeometry.POINTS[name as keyof typeof KiteGeometry.POINTS];
-        return staticPoint ? staticPoint.clone() : null;
-    }
-
-    /**
-     * Définit un point (met à jour la position du point visuel)
-     */
-    public setPoint(name: string, position: THREE.Vector3): void {
-        const point = this.points.get(name);
-        if (point) {
-            point.group.position.copy(position);
+            this.group.add(this.bridleLines);
         }
     }
 
-    /**
-     * Obtient tous les points (compatible avec simulationV8)
-     */
-    public getPoints(): Map<string, THREE.Vector3> {
-        const pointsMap = new Map<string, THREE.Vector3>();
-        Object.entries(KiteGeometry.POINTS).forEach(([name, position]) => {
-            pointsMap.set(name, position.clone());
+    private createLabels(): void {
+        console.log(`🏷️ createLabels() appelé, showLabels=${this.kiteConfig.showLabels}`);
+        if (!this.kiteConfig.showLabels) {
+            console.log('🚫 Labels désactivés dans la config');
+            return;
+        }
+
+        console.log(`🏷️ Création des labels...`);
+
+        const importantPoints = [KiteControlPoint.NEZ, 'CENTRE', 'SPINE_BAS', KiteControlPoint.CTRL_GAUCHE, KiteControlPoint.CTRL_DROIT, 'BORD_GAUCHE', 'BORD_DROIT'];
+
+        importantPoints.forEach(pointName => {
+            const point = this.points.get(pointName);
+            if (point) {
+                const label = new C_label({
+                    text: pointName.replace('_', ' '),
+                    target: point,
+                    fontSize: 8,
+                    color: '#ffffff',
+                    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                    offset: new THREE.Vector3(0, 0.08, 0),
+                    fadeDistance: 8,
+                    maxDistance: 12,
+                    scaleMode: 'distance',
+                    baseScale: 0.1,
+                    minScale: 0.05,
+                    maxScale: 0.2,
+                    distanceScaling: true,
+                    name: `Label_${pointName}`
+                });
+
+                this.add_child(label);
+                this.labels.set(pointName, label);
+                console.log(`🏷️ Label CAO créé pour ${pointName}`);
+            }
         });
-        return pointsMap;
+
+        this.sails.forEach((sail, index) => {
+            const sailName = KiteGeometry.SURFACES[index]?.name || `Voile_${index}`;
+            const label = new C_label({
+                text: sailName.replace('_', ' ').replace('surface ', ''),
+                target: sail,
+                fontSize: 7,
+                color: '#e2e8f0',
+                backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                offset: new THREE.Vector3(0, 0.04, 0),
+                fadeDistance: 6,
+                maxDistance: 10,
+                scaleMode: 'distance',
+                baseScale: 0.08,
+                minScale: 0.04,
+                maxScale: 0.15,
+                distanceScaling: true,
+                name: `Label_${sailName}`
+            });
+
+            this.add_child(label);
+            this.labels.set(sailName, label);
+        });
+
+        console.log(`✅ ${this.labels.size} labels créés au total`);
     }
 
-    /**
-     * Obtient la map des points pour la simulation physique (format [x,y,z])
-     */
-    public getPointsMap(): Map<string, [number, number, number]> {
-        const pointsMap = new Map<string, [number, number, number]>();
-        Object.entries(KiteGeometry.POINTS).forEach(([name, position]) => {
-            pointsMap.set(name, [position.x, position.y, position.z]);
-        });
-        return pointsMap;
+    public getPoint(name: string): Point | null {
+        return this.points.get(name) || null;
     }
 
-    /**
-     * Active/désactive l'affichage des points
-     */
+    public getPointPosition(name: string): THREE.Vector3 | null {
+        const coords = KiteGeometry.POINTS.get(name);
+        return coords ? new THREE.Vector3(...coords) : null;
+    }
+
+    public setPointPosition(name: string, position: THREE.Vector3): void {
+        const point = this.points.get(name);
+        if (point) {
+            point.set_position(position);
+        }
+    }
+
+    public getPoints(): Map<string, Point> {
+        return this.points;
+    }
+
     public setShowPoints(show: boolean): void {
         this.kiteConfig.showPoints = show;
         this.points.forEach(point => {
@@ -395,9 +422,6 @@ export class Kite extends C_objet {
         });
     }
 
-    /**
-     * Active/désactive l'affichage du cadre
-     */
     public setShowFrame(show: boolean): void {
         this.kiteConfig.showFrame = show;
         this.frames.forEach(frame => {
@@ -405,9 +429,6 @@ export class Kite extends C_objet {
         });
     }
 
-    /**
-     * Active/désactive l'affichage des voiles
-     */
     public setShowSails(show: boolean): void {
         this.kiteConfig.showSails = show;
         this.sails.forEach(sail => {
@@ -415,189 +436,112 @@ export class Kite extends C_objet {
         });
     }
 
-    /**
-     * Met à jour les lignes de brides
-     */
-    public updateBridleLines(): void {
-        if (this.bridleLines) {
-            this.createBridleLines();
-        }
+    public setShowLabels(show: boolean): void {
+        this.kiteConfig.showLabels = show;
+        this.labels.forEach(label => {
+            label.setVisible(show);
+        });
+        console.log(`🏷️ Labels ${show ? 'activés' : 'désactivés'}`);
     }
 
-    /**
-     * Ajuste la longueur des brides
-     */
-    public adjustBridleLength(factor: number): void {
-        this.bridleLengthFactor = Math.max(0.5, Math.min(1.5, factor));
-    }
-
-    /**
-     * Obtient la longueur de repos d'une bride
-     */
-    public getBridleRestLength(bridleName: 'left' | 'right'): number | undefined {
-        const nez = this.getPoint('NEZ');
-        const ctrl = this.getPoint(bridleName === 'left' ? 'CTRL_GAUCHE' : 'CTRL_DROIT');
-        if (!nez || !ctrl) return undefined;
-        return nez.distanceTo(ctrl) * this.bridleLengthFactor;
-    }
-
-    /**
-     * Obtient le facteur de longueur des brides
-     */
-    public getBridleLengthFactor(): number {
-        return this.bridleLengthFactor;
-    }
-
-    /**
-     * Calcule la surface totale du cerf-volant
-     */
     public getTotalArea(): number {
         return this.sails.reduce((total, sail) => total + sail.getArea(), 0);
     }
 
-    /**
-     * Applique les forces aérodynamiques à toutes les voiles
-     */
-    public applyAerodynamicForces(windVector: THREE.Vector3, airDensity: number = 1.225): {
-        totalLift: THREE.Vector3;
-        totalDrag: THREE.Vector3;
-        totalForce: THREE.Vector3;
-    } {
-        let totalLift = new THREE.Vector3();
-        let totalDrag = new THREE.Vector3();
-
-        this.sails.forEach(sail => {
-            const forces = sail.applyWindForce(windVector, airDensity);
-            totalLift.add(forces.lift);
-            totalDrag.add(forces.drag);
-        });
-
-        const totalForce = totalLift.clone().add(totalDrag);
-
-        return { totalLift, totalDrag, totalForce };
-    }
-
-    /**
-     * Démarre l'animation de gonflement pour toutes les voiles
-     */
-    public startBillowing(intensity: number = 0.1, speed: number = 1): void {
-        this.sails.forEach(sail => {
-            sail.startBillowing(intensity, speed);
+    public updateLabels(cameraPosition: THREE.Vector3): void {
+        this.labels.forEach(label => {
+            label.update(0.016, cameraPosition);
         });
     }
 
-    /**
-     * Arrête l'animation de gonflement
-     */
-    public stopBillowing(): void {
+    public setLabelsScaleMode(mode: 'fixed' | 'adaptive' | 'distance'): void {
+        this.labels.forEach(label => {
+            label.setScaleMode(mode);
+        });
+        console.log(`🏷️ Mode d'échelle des labels changé vers: ${mode}`);
+    }
+
+    public setLabelsBaseScale(scale: number): void {
+        this.labels.forEach(label => {
+            label.setBaseScale(scale);
+        });
+        console.log(`🏷️ Échelle de base des labels changée vers: ${scale}`);
+    }
+
+    public setLabelsDistanceScaling(enabled: boolean): void {
+        this.labels.forEach(label => {
+            label.setDistanceScaling(enabled);
+        });
+        console.log(`🏷️ Dimensionnement selon la distance: ${enabled ? 'activé' : 'désactivé'}`);
+    }
+
+    public updateGeometry(): void {
+        this.frames.forEach(frame => {
+            frame.updateGeometry();
+        });
+        this.createBridleLines();
+    }
+
+    public startPulsing(intensity: number = 0.1, speed: number = 1): void {
         this.sails.forEach(sail => {
-            sail.stopBillowing();
+            sail.startPulsing(intensity, speed);
         });
     }
 
-    /**
-     * Convertit les coordonnées locales en coordonnées mondiales
-     */
-    public localToWorld(vector: THREE.Vector3): THREE.Vector3 {
-        const worldVector = vector.clone();
-        this.group.updateMatrixWorld();
-        return worldVector.applyMatrix4(this.group.matrixWorld);
+    public stopPulsing(): void {
+        this.sails.forEach(sail => {
+            sail.stopPulsing();
+        });
     }
 
-    /**
-     * Convertit les coordonnées mondiales en coordonnées locales
-     */
-    public worldToLocal(vector: THREE.Vector3): THREE.Vector3 {
-        const localVector = vector.clone();
-        this.group.updateMatrixWorld();
-        return localVector.applyMatrix4(new THREE.Matrix4().copy(this.group.matrixWorld).invert());
-    }
-
-    // Méthodes de compatibilité pour maintenir l'interface existante
-
-    public create(): this {
-        return this;
-    }
-
-    public getName(): string {
-        return 'Cerf-volant Delta Modulaire';
-    }
-
-    public getDescription(): string {
-        return 'Cerf-volant construit avec les composants Point, Frame et Sail';
-    }
-
-    public getPrimitiveCount(): number {
-        return this.points.size + this.sails.length + this.frames.length;
-    }
-
-    public addPrimitiveAt(primitive: any, position: [number, number, number]): void {
-        // Pour compatibilité - non implémenté dans cette version
-    }
-
-    // Méthodes de transformation pour compatibilité
-    public localToWorldPoint(localPoint: THREE.Vector3): THREE.Vector3 {
-        return this.localToWorld(localPoint);
-    }
-
-    public worldToLocalPoint(worldPoint: THREE.Vector3): THREE.Vector3 {
-        return this.worldToLocal(worldPoint);
-    }
-
-    /**
-     * Nettoie toutes les ressources
-     */
-    public dispose(): void {
-        // Nettoyer les points
+    private cleanup(): void {
         this.points.forEach(point => {
-            // Les C_objet ont leur propre méthode dispose si elle existe
-            if (typeof point.dispose === 'function') {
-                point.dispose();
-            }
+            point.queue_free();
         });
         this.points.clear();
 
-        // Nettoyer les voiles
         this.sails.forEach(sail => {
-            if (typeof sail.dispose === 'function') {
-                sail.dispose();
-            }
+            sail.queue_free();
         });
         this.sails.length = 0;
 
-        // Nettoyer les frames
         this.frames.forEach(frame => {
-            if (typeof frame.dispose === 'function') {
-                frame.dispose();
-            }
+            frame.queue_free();
         });
         this.frames.length = 0;
 
-        // Nettoyer les lignes de brides
+        this.labels.forEach(label => {
+            label.queue_free();
+        });
+        this.labels.clear();
+
         if (this.bridleLines) {
+            this.bridleLines.traverse((child) => {
+                if (child instanceof THREE.Line) {
+                    child.geometry.dispose();
+                    if (child.material instanceof THREE.Material) {
+                        child.material.dispose();
+                    }
+                }
+            });
             this.bridleLines.clear();
             this.bridleLines = null;
         }
-
-        // Appeler dispose de la classe parente si elle existe
-        if (super.dispose) {
-            super.dispose();
-        }
     }
 
-    /**
-     * Informations de debug détaillées
-     */
-    public getDebugInfo(): object {
+    public queue_free(): void {
+        this.cleanup();
+        super.queue_free();
+    }
+
+    public get_debug_info(): object {
         return {
-            id: this.id,
-            name: this.name,
+            ...super.get_debug_info(),
             config: this.kiteConfig,
             pointCount: this.points.size,
             frameCount: this.frames.length,
             sailCount: this.sails.length,
-            totalArea: KiteGeometry.TOTAL_AREA,
-            bridleLengthFactor: this.bridleLengthFactor,
+            totalArea: this.getTotalArea(),
             components: {
                 points: Array.from(this.points.keys()),
                 frames: this.frames.map(f => f.name),
@@ -606,16 +550,27 @@ export class Kite extends C_objet {
         };
     }
 
-    /**
-     * Propriétés additionnelles pour compatibilité avec simulationV8
-     */
-    public userData: any = {};
-    
-    // Propriétés héritées de THREE.Object3D pour la compatibilité
-    public get position(): THREE.Vector3 { return this.group.position; }
-    public get rotation(): THREE.Euler { return this.group.rotation; }
-    public get quaternion(): THREE.Quaternion { return this.group.quaternion; }
-    public get scale(): THREE.Vector3 { return this.group.scale; }
+    public getFaces(): { normal: THREE.Vector3, center: THREE.Vector3, area: number }[] {
+        return this.sails.map(sail => sail.getFaceInfo());
+    }
+
+    // Méthodes de compatibilité pour physique et debug
+    // getRotation retourne désormais la quaternion courante du groupe (représentation canonique)
+    public getRotation(): THREE.Quaternion {
+        return this.get_group().quaternion;
+    }
+
+    public get position(): THREE.Vector3 {
+        return this.get_position();
+    }
+
+    public get quaternion(): THREE.Quaternion {
+        return this.group.quaternion;
+    }
+
+    public get userData(): any {
+        return this.group.userData;
+    }
 }
 
 export default Kite;

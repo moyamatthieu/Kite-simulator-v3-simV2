@@ -59,7 +59,7 @@ export class DebugVisualizer {
         kite: Kite,
         kiteController: KiteController,
         windSimulator: WindSimulator,
-        lineSystem: LineSystemV8,
+        lineSystem: any,
         controlRotation: number,
         pilotPosition: THREE.Vector3,
         deltaTime: number
@@ -205,7 +205,7 @@ export class DebugVisualizer {
      */
     private addLineTensionArrows(
         kite: Kite,
-        lineSystem: LineSystemV8,
+        lineSystem: any,
         controlRotation: number,
         pilotPosition: THREE.Vector3
     ): void {
@@ -216,8 +216,10 @@ export class DebugVisualizer {
         const ctrlRight = kite.getPoint('CTRL_DROIT');
 
         if (ctrlLeft && ctrlRight) {
-            const leftWorld = ctrlLeft.clone().applyQuaternion(kite.quaternion).add(kite.position);
-            const rightWorld = ctrlRight.clone().applyQuaternion(kite.quaternion).add(kite.position);
+            const leftLocal = ctrlLeft.get_position ? ctrlLeft.get_position() : ctrlLeft as unknown as THREE.Vector3;
+            const rightLocal = ctrlRight.get_position ? ctrlRight.get_position() : ctrlRight as unknown as THREE.Vector3;
+            const leftWorld = leftLocal.clone().applyQuaternion(kite.quaternion).add(kite.position);
+            const rightWorld = rightLocal.clone().applyQuaternion(kite.quaternion).add(kite.position);
 
             // Flèche tension gauche
             if (metrics.leftTension > 0) {
@@ -304,7 +306,7 @@ export class DebugVisualizer {
         kite: Kite,
         kiteController: KiteController,
         windSimulator: WindSimulator,
-        lineSystem: LineSystemV8,
+        lineSystem: any,
         controlRotation: number,
         pilotPosition: THREE.Vector3
     ): void {
@@ -416,7 +418,7 @@ export class DebugVisualizer {
         kite: Kite,
         kiteController: KiteController,
         windSimulator: WindSimulator,
-        lineSystem: LineSystemV8,
+        lineSystem: any,
         controlRotation: number,
         pilotPosition: THREE.Vector3
     ): {

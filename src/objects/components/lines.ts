@@ -21,9 +21,9 @@
  */
 
 import * as THREE from 'three';
-import { PhysicsConstants, CONFIG } from '@core/constants';
-import { Kite } from '@objects/Kite';
-import { C_objet, C_objetConfig } from './C_objet';
+import { PhysicsConstants, CONFIG } from '../../core/constants';
+import { Kite } from '../Kite';
+import { C_objet, C_objetConfig } from '../../class/C_objet';
 
 /**
  * Une ligne individuelle entre 2 points avec contrainte de distance
@@ -244,8 +244,9 @@ export class LineSystem extends C_objet {
     }
 
     // Transformer en coordonnées monde
-    const leftWorld = ctrlLeft.clone().applyQuaternion(kite.getRotation()).add(kite.getPosition());
-    const rightWorld = ctrlRight.clone().applyQuaternion(kite.getRotation()).add(kite.getPosition());
+    const kiteQuat = new THREE.Quaternion().setFromEuler(kite.get_rotation());
+    const leftWorld = ctrlLeft.get_position().clone().applyQuaternion(kiteQuat).add(kite.get_position());
+    const rightWorld = ctrlRight.get_position().clone().applyQuaternion(kiteQuat).add(kite.get_position());
 
     // GÉOMÉTRIE : Calcul des nouvelles positions des poignées selon rotation barre
     this.updateHandlePositions(controlRotation, pilotPosition);
@@ -315,8 +316,9 @@ export class LineSystem extends C_objet {
 
     // Couple ligne gauche (si tendue)
     if (leftForce.length() > 0) {
+      const kiteQuat = new THREE.Quaternion().setFromEuler(kite.get_rotation());
       const leftTorque = new THREE.Vector3().crossVectors(
-        ctrlLeft.clone().applyQuaternion(kite.getRotation()),
+        ctrlLeft.get_position().clone().applyQuaternion(kiteQuat),
         leftForce
       );
       totalTorque.add(leftTorque);
@@ -324,8 +326,9 @@ export class LineSystem extends C_objet {
 
     // Couple ligne droite (si tendue)
     if (rightForce.length() > 0) {
+      const kiteQuat = new THREE.Quaternion().setFromEuler(kite.get_rotation());
       const rightTorque = new THREE.Vector3().crossVectors(
-        ctrlRight.clone().applyQuaternion(kite.getRotation()),
+        ctrlRight.get_position().clone().applyQuaternion(kiteQuat),
         rightForce
       );
       totalTorque.add(rightTorque);
@@ -384,11 +387,11 @@ export class LineSystem extends C_objet {
 
     const mass = CONFIG.kite.mass;
     const inertia = CONFIG.kite.inertia;
-    const predictedPosition = kite.getPosition().clone();
+    const predictedPosition = kite.get_position().clone();
 
     // Résolution PBD pour chaque ligne (style SimulationV8)
     const solveLine = (ctrlLocal: THREE.Vector3, handle: THREE.Vector3) => {
-      const q = kite.getRotation();
+      const q = new THREE.Quaternion().setFromEuler(kite.get_rotation());
       const cpWorld = ctrlLocal.clone().applyQuaternion(q).add(predictedPosition);
       const diff = cpWorld.clone().sub(handle);
       const dist = diff.length();
@@ -418,17 +421,19 @@ export class LineSystem extends C_objet {
       if (angle > PhysicsConstants.EPSILON) {
         const axis = dTheta.normalize();
         const dq = new THREE.Quaternion().setFromAxisAngle(axis, angle);
-        kite.getRotation().premultiply(dq).normalize();
+        const currentQuat = new THREE.Quaternion().setFromEuler(kite.get_rotation());
+        currentQuat.premultiply(dq).normalize();
+        kite.set_rotation(new THREE.Euler().setFromQuaternion(currentQuat));
       }
 
       // Correction de vitesse (si disponible dans l'état du kite)
-      if (kite.userData.velocity && kite.userData.angularVelocity) {
-        const q2 = kite.getRotation();
+      if (kite.get_group().userData.velocity && kite.get_group().userData.angularVelocity) {
+        const q2 = new THREE.Quaternion().setFromEuler(kite.get_rotation());
         const cpWorld2 = ctrlLocal.clone().applyQuaternion(q2).add(predictedPosition);
         const n2 = cpWorld2.clone().sub(handle).normalize();
         const r2 = cpWorld2.clone().sub(predictedPosition);
-        const pointVel = kite.userData.velocity.clone()
-          .add(new THREE.Vector3().crossVectors(kite.userData.angularVelocity, r2));
+        const pointVel = kite.get_group().userData.velocity.clone()
+          .add(new THREE.Vector3().crossVectors(kite.get_group().userData.angularVelocity, r2));
         const radialSpeed = pointVel.dot(n2);
 
         if (radialSpeed > 0) {
@@ -436,21 +441,21 @@ export class LineSystem extends C_objet {
           const eff = invMass + (rxn.lengthSq() * invInertia);
           const J = -radialSpeed / Math.max(eff, PhysicsConstants.EPSILON);
 
-          kite.userData.velocity.add(n2.clone().multiplyScalar(J * invMass));
+          kite.get_group().userData.velocity.add(n2.clone().multiplyScalar(J * invMass));
           const angImpulse = new THREE.Vector3().crossVectors(r2, n2.clone().multiplyScalar(J));
-          kite.userData.angularVelocity.add(angImpulse.multiplyScalar(invInertia));
+          kite.get_group().userData.angularVelocity.add(angImpulse.multiplyScalar(invInertia));
         }
       }
     };
 
     // Deux passes pour mieux satisfaire les contraintes (style SimulationV8)
     for (let i = 0; i < 2; i++) {
-      solveLine(ctrlLeft, this.leftHandlePos);
-      solveLine(ctrlRight, this.rightHandlePos);
+      solveLine(ctrlLeft.get_position(), this.leftHandlePos);
+      solveLine(ctrlRight.get_position(), this.rightHandlePos);
     }
 
     // Appliquer la position finale
-    kite.getPosition().copy(predictedPosition);
+    kite.get_position().copy(predictedPosition);
   }
 
   private updateHandlePositions(controlRotation: number, pilotPosition: THREE.Vector3): void {
@@ -491,20 +496,21 @@ export class LineSystem extends C_objet {
       return;
     }
 
-    const kitePos = kite.getPosition();
-    const kiteRot = kite.getRotation();
+    const kitePos = kite.get_position();
+    const kiteRot = kite.get_rotation();
 
     // Validation des valeurs du kite
-    if (!kitePos || !kiteRot || 
+    if (!kitePos || !kiteRot ||
         !isFinite(kitePos.x) || !isFinite(kitePos.y) || !isFinite(kitePos.z) ||
-        !isFinite(kiteRot.x) || !isFinite(kiteRot.y) || !isFinite(kiteRot.z) || !isFinite(kiteRot.w)) {
+        !isFinite(kiteRot.x) || !isFinite(kiteRot.y) || !isFinite(kiteRot.z)) {
       console.warn('⚠️ updateKiteControlPoints: position/rotation kite invalide', { kitePos, kiteRot });
       return;
     }
 
     // Positions mondiales des points de contrôle
-    this.leftKitePos.copy(ctrlLeft).applyQuaternion(kiteRot).add(kitePos);
-    this.rightKitePos.copy(ctrlRight).applyQuaternion(kiteRot).add(kitePos);
+    const kiteQuat = new THREE.Quaternion().setFromEuler(kiteRot);
+    this.leftKitePos.copy(ctrlLeft.get_position()).applyQuaternion(kiteQuat).add(kitePos);
+    this.rightKitePos.copy(ctrlRight.get_position()).applyQuaternion(kiteQuat).add(kitePos);
   }
 
   private resolveKitePosition(
@@ -520,8 +526,8 @@ export class LineSystem extends C_objet {
     if (!ctrlLeft || !ctrlRight) return;
 
     // Position locale des points de contrôle dans le repère du kite
-    const leftLocal = ctrlLeft.clone();
-    const rightLocal = ctrlRight.clone();
+    const leftLocal = ctrlLeft.get_position().clone();
+    const rightLocal = ctrlRight.get_position().clone();
 
     // Centre local entre les deux points de contrôle
     const centerLocal = leftLocal.clone().add(rightLocal).multiplyScalar(0.5);
@@ -530,12 +536,12 @@ export class LineSystem extends C_objet {
     const centerWorld = constrainedLeftPos.clone().add(constrainedRightPos).multiplyScalar(0.5);
 
     // Calculer la nouvelle position du kite basée sur les contraintes géométriques
-    const centerLocalWorld = centerLocal.clone().applyQuaternion(kite.getRotation());
+    const centerLocalWorld = centerLocal.clone().applyQuaternion(kite.get_group().quaternion);
     const newKitePosition = centerWorld.clone().sub(centerLocalWorld);
 
     // Appliquer SEULEMENT la nouvelle position
     // L'orientation sera gérée par les forces aérodynamiques dans updatePhysics()
-    kite.getPosition().copy(newKitePosition);
+    kite.get_position().copy(newKitePosition);
 
     // *** AUCUNE ROTATION ARTIFICIELLE ***
     // Le kite s'oriente naturellement via :
@@ -594,6 +600,23 @@ export class LineSystem extends C_objet {
     // Mettre à jour l'affichage
     this.leftLine.updateVisual();
     this.rightLine.updateVisual();
+  }
+
+  /**
+   * Met à jour une ligne spécifique (compatibilité avec EntityManager)
+   */
+  updateLine(lineIndex: number, pointA: THREE.Vector3, pointB: THREE.Vector3): void {
+    if (lineIndex === 0) {
+      // Ligne gauche
+      this.leftHandlePos.copy(pointA);
+      this.leftKitePos.copy(pointB);
+      this.leftLine.updateVisual();
+    } else if (lineIndex === 1) {
+      // Ligne droite
+      this.rightHandlePos.copy(pointA);
+      this.rightKitePos.copy(pointB);
+      this.rightLine.updateVisual();
+    }
   }
 
   get object3d(): THREE.Object3D {

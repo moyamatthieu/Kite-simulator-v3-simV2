@@ -22,10 +22,11 @@
       "@physics/*": ["src/physics/*"],
       "@ui/*": ["src/ui/*"],
       "@utils/*": ["src/utils/*"],
-      "@types/*": ["src/types/*"],
+  "@types/*": ["src/objects/types/*"],
+      "@class/*": ["src/class/*"],
       "@factories/*": ["src/factories/*"]
     }
   },
-  "include": ["src/**/*", "vite.config.ts"],
+  "include": ["src/**/*", "vite.config.ts", ".claude/legacy"],
   "exclude": ["node_modules", "dist"]
 }

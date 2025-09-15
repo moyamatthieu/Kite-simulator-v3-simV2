@@ -2,7 +2,7 @@
  * input.ts — Gestion des entrées utilisateur avec compatibilité AZERTY/QWERTY
  */
 
-import { PhysicsConstants } from '@/simulation/physics/PhysicsConstants';
+import { PhysicsConstants } from '@core/constants';
 
 export class InputHandler {
   private left = false;

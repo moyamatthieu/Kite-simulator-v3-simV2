@@ -1,17 +1,17 @@
+
 import { defineConfig } from 'vite';
-import path from 'node:path';
 
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@core': path.resolve(__dirname, './src/core'),
-      '@objects': path.resolve(__dirname, './src/objects'),
-      '@physics': path.resolve(__dirname, './src/physics'),
-      '@ui': path.resolve(__dirname, './src/ui'),
-      '@utils': path.resolve(__dirname, './src/utils'),
-      '@factories': path.resolve(__dirname, './src/factories'),
-      '@types': path.resolve(__dirname, './src/types'),
+      '@': './src',
+      '@core': './src/core',
+      '@objects': './src/objects',
+      '@physics': './src/physics',
+      '@ui': './src/ui',
+      '@utils': './src/utils',
+      '@factories': './src/factories',
+      '@types': './src/types',
     },
   },
   server: {
@@ -25,7 +25,7 @@ export default defineConfig({
     target: 'esnext',
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, 'index.html'),
+        main: 'index.html',
       },
       output: {
         manualChunks: {

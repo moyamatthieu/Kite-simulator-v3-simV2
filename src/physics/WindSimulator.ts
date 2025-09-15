@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'three';
-import { WindParams, CONFIG } from '@core/constants';
+import { WindParams, CONFIG } from '../core/constants';
 
 export class WindSimulator {
     private params: WindParams;

@@ -19,11 +19,11 @@
  */
 
 import * as THREE from 'three';
-import { Kite } from '@objects/Kite';
+import { Kite } from '../objects/Kite';
 import { WindSimulator } from './WindSimulator';
-import { LineSystem } from '@objects/lines';
+import { LineSystem } from '../objects/components/lines';
 import { AerodynamicsCalculator } from './AerodynamicsCalculator';
-import { CONFIG, PhysicsConstants, WindParams, KiteState, HandlePositions } from '@core/constants';
+import { CONFIG, PhysicsConstants, WindParams, KiteState, HandlePositions } from '../core/constants';
 
 // ==============================================================================
 // KITE CONTROLLER V8 - Intégré directement
@@ -57,13 +57,17 @@ class KiteController {
     constructor(kite: Kite) {
         this.kite = kite;
         this.state = {
-            position: kite.getPosition().clone(),
+            position: kite.get_position().clone(),
             velocity: new THREE.Vector3(),
             angularVelocity: new THREE.Vector3(),
-            orientation: kite.getRotation().clone()
+            orientation: kite.get_group().quaternion.clone()
         };
-        this.previousPosition = kite.getPosition().clone();
-        this.kite.userData.lineLength = CONFIG.lines.defaultLength;
+        this.previousPosition = kite.get_position().clone();
+        this.kite.get_group().userData.lineLength = CONFIG.lines.defaultLength;
+
+        // Initialize velocity properties in userData for other components to access
+        this.kite.get_group().userData.velocity = this.state.velocity.clone();
+        this.kite.get_group().userData.angularVelocity = this.state.angularVelocity.clone();
 
         this.smoothedForce = new THREE.Vector3();
         this.smoothedTorque = new THREE.Vector3();
@@ -86,11 +90,15 @@ class KiteController {
         this.validatePosition(newPosition);
 
         // Appliquer la position finale
-        this.kite.getPosition().copy(newPosition);
+        this.kite.get_position().copy(newPosition);
         this.previousPosition.copy(newPosition);
 
         // Mise à jour de l'orientation avec le couple lissé
         this.updateOrientation(this.smoothedTorque, deltaTime);
+
+        // Update userData with current velocity for other components to access
+        this.kite.get_group().userData.velocity = this.state.velocity.clone();
+        this.kite.get_group().userData.angularVelocity = this.state.angularVelocity.clone();
     }
 
     private validateForces(forces: THREE.Vector3): THREE.Vector3 {
@@ -131,7 +139,7 @@ class KiteController {
             this.hasExcessiveVelocity = false;
         }
 
-        return this.kite.getPosition().clone().add(this.state.velocity.clone().multiplyScalar(deltaTime));
+        return this.kite.get_position().clone().add(this.state.velocity.clone().multiplyScalar(deltaTime));
     }
 
     private handleGroundCollision(newPosition: THREE.Vector3): void {
@@ -139,15 +147,15 @@ class KiteController {
 
         // Utiliser les points de géométrie du kite pour une collision précise
         const kitePoints = [
-            this.kite.getPoint('NEZ'),
-            this.kite.getPoint('SPINE_BAS'),
-            this.kite.getPoint('BORD_GAUCHE'),
-            this.kite.getPoint('BORD_DROIT')
-        ].filter(point => point !== undefined) as THREE.Vector3[];
+            this.kite.getPointPosition('NEZ'),
+            this.kite.getPointPosition('SPINE_BAS'),
+            this.kite.getPointPosition('BORD_GAUCHE'),
+            this.kite.getPointPosition('BORD_DROIT')
+        ].filter(point => point !== null) as THREE.Vector3[];
 
         if (kitePoints.length > 0) {
             let minY = Infinity;
-            const q = this.kite.getRotation();
+            const q = this.kite.get_group().quaternion;
 
             kitePoints.forEach(localPoint => {
                 const world = localPoint.clone().applyQuaternion(q).add(newPosition);
@@ -207,8 +215,8 @@ class KiteController {
             const angle = this.state.angularVelocity.length() * deltaTime;
             deltaRotation.setFromAxisAngle(axis, angle);
 
-            this.kite.getRotation().multiply(deltaRotation);
-            this.kite.getRotation().normalize();
+            this.kite.get_group().quaternion.multiply(deltaRotation);
+            this.kite.get_group().quaternion.normalize();
         }
     }
 
@@ -221,7 +229,7 @@ class KiteController {
     }
 
     setLineLength(length: number): void {
-        this.kite.userData.lineLength = length;
+        this.kite.get_group().userData.lineLength = length;
     }
 
     getWarnings(): KiteWarnings {
@@ -290,14 +298,14 @@ class ControlBarManager {
     updateVisual(bar: THREE.Group, kite: Kite): void {
         if (!bar) return;
 
-        const ctrlLeft = kite.getPoint('CTRL_GAUCHE');
-        const ctrlRight = kite.getPoint('CTRL_DROIT');
+        const ctrlLeftPos = kite.getPointPosition('CTRL_GAUCHE');
+        const ctrlRightPos = kite.getPointPosition('CTRL_DROIT');
 
-        if (ctrlLeft && ctrlRight) {
-            const kiteLeftWorld = ctrlLeft.clone();
-            const kiteRightWorld = ctrlRight.clone();
-            kite.localToWorld(kiteLeftWorld);
-            kite.localToWorld(kiteRightWorld);
+        if (ctrlLeftPos && ctrlRightPos) {
+            const kiteLeftWorld = ctrlLeftPos.clone();
+            const kiteRightWorld = ctrlRightPos.clone();
+            kite.get_group().localToWorld(kiteLeftWorld);
+            kite.get_group().localToWorld(kiteRightWorld);
 
             const centerKite = kiteLeftWorld.clone().add(kiteRightWorld).multiplyScalar(0.5);
             const toKiteVector = centerKite.clone().sub(this.position).normalize();
@@ -340,7 +348,7 @@ export class PhysicsEngine {
 
         // Récupérer l'état actuel du système
         const kite = this.kiteController.getKite();
-        const handles = this.controlBarManager.getHandlePositions(kite.getPosition());
+        const handles = this.controlBarManager.getHandlePositions(kite.get_position());
 
         // Vent apparent = vent réel - vitesse du kite (principe de relativité)
         const kiteState = this.kiteController.getState();
@@ -350,7 +358,7 @@ export class PhysicsEngine {
         // Le couple émerge de la différence gauche/droite naturelle
         const { lift, drag, torque: aeroTorque } = AerodynamicsCalculator.calculateForces(
             apparentWind,
-            kite.getRotation()
+            kite.get_group().quaternion
         );
 
         // Force constante vers le bas (F = mg)
@@ -388,6 +396,12 @@ export class PhysicsEngine {
 
     setWindParams(params: Partial<WindParams>): void {
         this.windSimulator.setParams(params);
+    }
+
+    // Optional API used by UI to tweak aerodynamic coefficients at runtime
+    setLiftCoefficient(_coef: number): void {
+        // No-op by default. AerodynamicsCalculator could expose a setter if needed.
+        // Left as a stable API surface for UI to call.
     }
 
     setLineLength(length: number): void {

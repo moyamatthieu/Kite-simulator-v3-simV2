@@ -7,7 +7,7 @@
  */
 
 import * as THREE from 'three';
-import { C_objet, C_objetConfig } from './C_objet';
+import { C_objet, C_objetConfig } from '../../class/C_objet';
 
 // Constantes spécifiques à la géométrie de la barre de contrôle.
 // Ces valeurs sont des propriétés visuelles et non des constantes physiques globales.
@@ -110,7 +110,7 @@ export class ControlBar3D extends C_objet {
   /**
    * Nettoie les ressources de la barre de contrôle
    */
-  dispose(): void {
+  queue_free(): void {
     if (this.bar.geometry) {
       this.bar.geometry.dispose();
     }

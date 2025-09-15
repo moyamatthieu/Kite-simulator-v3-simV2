@@ -49,12 +49,13 @@ export class GroundCollisionSystem {
      * Calcule le point le plus bas du cerf-volant en tenant compte de sa rotation
      */
     private getLowestPoint(kite: THREE.Object3D): number {
-        const localPoints = Object.values(KiteGeometry.POINTS); // Accès direct aux points
+        const localPoints = Array.from(KiteGeometry.POINTS.values()); // Accès aux valeurs de la Map
 
         let lowestY = Infinity;
 
         // Transformer chaque point local en coordonnées mondiales et trouver le plus bas
-        localPoints.forEach((localPoint: THREE.Vector3) => {
+        localPoints.forEach((localCoords: [number, number, number]) => {
+            const localPoint = new THREE.Vector3(...localCoords);
             const worldPoint = localPoint.clone()
                 .applyQuaternion(kite.quaternion)  // Appliquer la rotation
                 .add(kite.position);               // Appliquer la position

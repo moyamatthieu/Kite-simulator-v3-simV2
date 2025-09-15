@@ -1,193 +1,645 @@
 /**
- * `render.ts` - Gestionnaire du rendu 3D avec Three.js.
- *
- * Cette classe initialise et gère la scène Three.js, la caméra, le renderer WebGL,
- * et les contrôles de la caméra (OrbitControls). Elle est responsable de la configuration
- * de l'environnement visuel et du cycle de rendu de la simulation.
+ * render.ts - Gestionnaire de rendu 3D optimisé avec Three.js
+ * 
+ * Architecture moderne avec gestion des performances, cache de shaders,
+ * pipeline de rendu intelligent et système de qualité adaptatif
  */
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-// --- Constantes de Configuration du Rendu ---
-// Caméra
-const CAMERA_FOV = 60;                          // Champ de vision vertical en degrés
-const CAMERA_NEAR = 0.1;                        // Distance minimale de rendu
-const CAMERA_FAR = 1000;                        // Distance maximale de rendu
-const CAMERA_INITIAL_POSITION = new THREE.Vector3(0, 5, 15); // Position initiale de la caméra
-const CAMERA_LOOK_AT_TARGET = new THREE.Vector3(0, 3, -5);   // Point que la caméra regarde initialement
-const ORBIT_CONTROLS_TARGET = new THREE.Vector3(0, 3, -5);  // Point autour duquel les contrôles orbitent
-
-// Scène et Lumières
-const SCENE_BACKGROUND_COLOR = 0x222222;        // Gris foncé pour debug
-const SCENE_FOG_COLOR = 0x87ceeb;               // Couleur du brouillard
-const SCENE_FOG_NEAR = 30;                      // Distance à laquelle le brouillard commence
-const SCENE_FOG_FAR = 120;                      // Distance à laquelle le brouillard est le plus dense
-
-const HEMISPHERE_LIGHT_SKY_COLOR = 0xe7f3ff;    // Couleur du ciel pour la lumière hémisphérique
-const HEMISPHERE_LIGHT_GROUND_COLOR = 0x335533; // Couleur du sol pour la lumière hémisphérique
-const HEMISPHERE_LIGHT_INTENSITY = 0.9;         // Intensité de la lumière hémisphérique
-
-const DIRECTIONAL_LIGHT_COLOR = 0xffffff;       // Couleur de la lumière directionnelle (blanche)
-const DIRECTIONAL_LIGHT_INTENSITY = 0.9;        // Intensité de la lumière directionnelle
-const DIRECTIONAL_LIGHT_POSITION = new THREE.Vector3(12, 18, 10); // Position de la lumière directionnelle
-
+/**
+ * Configuration du rendu
+ */
+interface RenderConfig {
+    camera: {
+        fov: number;
+        near: number;
+        far: number;
+        initialPosition: THREE.Vector3;
+        lookAtTarget: THREE.Vector3;
+    };
+    scene: {
+        backgroundColor: number;
+        fogColor: number;
+        fogNear: number;
+        fogFar: number;
+    };
+    lighting: {
+        hemisphereLight: {
+            skyColor: number;
+            groundColor: number;
+            intensity: number;
+        };
+        directionalLight: {
+            color: number;
+            intensity: number;
+            position: THREE.Vector3;
+        };
+        ambientLight: {
+            color: number;
+            intensity: number;
+        };
+    };
+    shadows: {
+        enabled: boolean;
+        type: THREE.ShadowMapType;
+        mapSize: number;
+        bias: number;
+    };
+    quality: {
+        antialias: boolean;
+        pixelRatio: number;
+        powerPreference: 'default' | 'high-performance' | 'low-power';
+        adaptiveQuality: boolean;
+    };
+    controls: {
+        target: THREE.Vector3;
+        enableDamping: boolean;
+        dampingFactor: number;
+        enableZoom: boolean;
+        minDistance: number;
+        maxDistance: number;
+    };
+}
 
 /**
- * @class RenderManager
- * @description Gère l'initialisation et le cycle de rendu de la scène 3D avec Three.js.
- *              Inclut la scène, la caméra, le renderer, les contrôles de navigation
- *              et les lumières.
+ * Métriques de performance
+ */
+interface PerformanceMetrics {
+    fps: number;
+    frameTime: number;
+    triangles: number;
+    geometries: number;
+    textures: number;
+    programs: number;
+}
+
+/**
+ * Gestionnaire de rendu avec pipeline optimisé
  */
 export class RenderManager {
-  public readonly scene: THREE.Scene;           // La scène Three.js où sont ajoutés les objets
-  public readonly camera: THREE.PerspectiveCamera; // La caméra utilisée pour visualiser la scène
-  public readonly renderer: THREE.WebGLRenderer;   // Le renderer WebGL qui affiche la scène
-  public readonly controls: OrbitControls;       // Les contrôles pour naviguer autour de la scène
-  private defaultGroundGroup: THREE.Group | null = null; // Groupe sol/grille par défaut
+    public readonly scene: THREE.Scene;
+    public readonly camera: THREE.PerspectiveCamera;
+    public readonly renderer: THREE.WebGLRenderer;
+    public readonly controls: OrbitControls;
+    
+    private readonly config: RenderConfig;
+    private readonly container: HTMLElement;
+    
+    // État et performance
+    private isDisposed = false;
+    private frameCount = 0;
+    private lastTime = 0;
+    private currentFPS = 0;
+    private performanceMetrics: PerformanceMetrics;
+    
+    // Cache et optimisations
+    private readonly shaderCache = new Map<string, THREE.ShaderMaterial>();
+    private readonly textureCache = new Map<string, THREE.Texture>();
+    private defaultGroundGroup: THREE.Group | null = null;
+    
+    // Observateurs et gestionnaires
+    private resizeObserver: ResizeObserver | null = null;
+    private animationFrameId: number | null = null;
+    
+    // Lumières avec gestion intelligente
+    private hemisphereLight!: THREE.HemisphereLight;
+    private directionalLight!: THREE.DirectionalLight;
+    private ambientLight!: THREE.AmbientLight;
 
-  /**
-   * Crée une instance de RenderManager.
-   * @param {HTMLElement} container - L'élément DOM dans lequel le rendu sera affiché.
-   */
-  constructor(container: HTMLElement) {
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(SCENE_BACKGROUND_COLOR); // Définit la couleur du ciel
-    this.scene.fog = new THREE.Fog(SCENE_FOG_COLOR, SCENE_FOG_NEAR, SCENE_FOG_FAR); // Ajoute du brouillard
-
-    this.camera = new THREE.PerspectiveCamera(
-      CAMERA_FOV,
-      container.clientWidth / container.clientHeight, // Ratio d'aspect
-      CAMERA_NEAR,
-      CAMERA_FAR
-    );
-    this.camera.position.copy(CAMERA_INITIAL_POSITION); // Définit la position initiale de la caméra
-    this.camera.lookAt(CAMERA_LOOK_AT_TARGET);           // Définit le point que la caméra regarde
-
-    this.renderer = new THREE.WebGLRenderer({ antialias: true }); // Initialise le renderer avec anti-aliasing
-    this.renderer.setSize(container.clientWidth, container.clientHeight); // Définit la taille du renderer
-    this.renderer.setPixelRatio(window.devicePixelRatio); // Gère la résolution sur les écrans HiDPI
-    // Activer les ombres douces pour un rendu plus lisible
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // Un rendu plus lisible par défaut
-    // (sans imposer de pipeline PBR complet)
-    try {
-      (this.renderer as any).outputColorSpace = (THREE as any).SRGBColorSpace ?? (THREE as any).sRGBEncoding;
-      (this.renderer as any).toneMapping = (THREE as any).ACESFilmicToneMapping ?? (THREE as any).NoToneMapping;
-      (this.renderer as any).toneMappingExposure = 1.0;
-    } catch { /* compat */ }
-    container.appendChild(this.renderer.domElement);      // Ajoute le canvas au conteneur DOM
-
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement); // Crée les contrôles de la caméra
-    this.controls.target.copy(ORBIT_CONTROLS_TARGET); // Définit le point focal des contrôles
-    this.controls.update();                           // Met à jour les contrôles après modification de la cible
-
-    // Ajout des lumières à la scène
-    const hemiLight = new THREE.HemisphereLight(
-      HEMISPHERE_LIGHT_SKY_COLOR,
-      HEMISPHERE_LIGHT_GROUND_COLOR,
-      HEMISPHERE_LIGHT_INTENSITY
-    );
-    this.scene.add(hemiLight);
-
-    const dirLight = new THREE.DirectionalLight(
-      DIRECTIONAL_LIGHT_COLOR,
-      DIRECTIONAL_LIGHT_INTENSITY
-    );
-    dirLight.position.copy(DIRECTIONAL_LIGHT_POSITION);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(2048, 2048);
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 200;
-    dirLight.shadow.bias = -0.0002;
-    this.scene.add(dirLight);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.25)); // Remplit légèrement les ombres pour le sol
-
-    // Gère le redimensionnement de la fenêtre
-    window.addEventListener('resize', () => this.onResize(container));
-  }
-
-  /**
-   * Gère le redimensionnement de la fenêtre pour ajuster la caméra et le renderer.
-   * @param {HTMLElement} container - L'élément DOM qui contient le renderer.
-   */
-  onResize(container: HTMLElement): void {
-    this.camera.aspect = container.clientWidth / container.clientHeight;
-    this.camera.updateProjectionMatrix(); // Met à jour la matrice de projection de la caméra
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
-  }
-
-  /**
-   * Effectue un cycle de rendu de la scène.
-   */
-  render(): void {
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  /**
-   * Nettoie les ressources Three.js pour éviter les fuites de mémoire.
-   */
-  dispose(): void {
-    this.controls.dispose();  // Dispose les contrôles Orbit
-    this.renderer.dispose();  // Dispose le renderer WebGL
-    // Optionnel: nettoyer la scène si elle contient beaucoup d'objets dynamiques
-    // this.scene.children.forEach(child => {
-    //     if (child instanceof THREE.Mesh) {
-    //         child.geometry.dispose();
-    //         if (Array.isArray(child.material)) {
-    //             child.material.forEach(material => material.dispose());
-    //         } else {
-    //             child.material.dispose();
-    //         }
-    //     }
-    // });
-    // this.scene.clear();
-  }
-
-  /**
-   * Ajoute un sol et une grille par défaut si aucun sol n'est déjà présent.
-   * Utilise les noms d'objets ("Ground") pour détecter un environnement existant.
-   */
-  ensureGroundAndGrid(): void {
-    const existingGround = this.scene.getObjectByName('Ground');
-    if (existingGround) {
-      // Un environnement gère déjà le sol/grille
-      if (this.defaultGroundGroup) {
-        this.scene.remove(this.defaultGroundGroup);
-        this.defaultGroundGroup = null;
-      }
-      return;
+    constructor(container: HTMLElement, userConfig?: Partial<RenderConfig>) {
+        this.container = container;
+        this.config = this.createConfig(userConfig);
+        this.performanceMetrics = this.createInitialMetrics();
+        
+        // Initialisation ordonnée
+        this.scene = this.createScene();
+        this.camera = this.createCamera();
+        this.renderer = this.createRenderer();
+        this.controls = this.createControls();
+        
+        // Configuration avancée
+        this.setupLighting();
+        this.setupResizeHandling();
+        this.setupPostProcessing();
     }
 
-    if (this.defaultGroundGroup) return; // Déjà ajouté
+    /**
+     * Crée la configuration avec les valeurs par défaut
+     */
+    private createConfig(userConfig?: Partial<RenderConfig>): RenderConfig {
+        const defaultConfig: RenderConfig = {
+            camera: {
+                fov: 60,
+                near: 0.1,
+                far: 1000,
+                initialPosition: new THREE.Vector3(0, 5, 15),
+                lookAtTarget: new THREE.Vector3(0, 3, -5)
+            },
+            scene: {
+                backgroundColor: 0x222222,
+                fogColor: 0x87ceeb,
+                fogNear: 30,
+                fogFar: 120
+            },
+            lighting: {
+                hemisphereLight: {
+                    skyColor: 0xe7f3ff,
+                    groundColor: 0x335533,
+                    intensity: 0.9
+                },
+                directionalLight: {
+                    color: 0xffffff,
+                    intensity: 0.9,
+                    position: new THREE.Vector3(12, 18, 10)
+                },
+                ambientLight: {
+                    color: 0xffffff,
+                    intensity: 0.25
+                }
+            },
+            shadows: {
+                enabled: true,
+                type: THREE.PCFSoftShadowMap,
+                mapSize: 2048,
+                bias: -0.0002
+            },
+            quality: {
+                antialias: true,
+                pixelRatio: Math.min(window.devicePixelRatio, 2),
+                powerPreference: 'high-performance',
+                adaptiveQuality: true
+            },
+            controls: {
+                target: new THREE.Vector3(0, 3, -5),
+                enableDamping: true,
+                dampingFactor: 0.05,
+                enableZoom: true,
+                minDistance: 2,
+                maxDistance: 100
+            }
+        };
 
-    const group = new THREE.Group();
-    group.name = 'DefaultGroundGroup';
+        return this.mergeConfig(defaultConfig, userConfig);
+    }
 
-    // Grille
-    const grid = new THREE.GridHelper(120, 120, 0x335533, 0x224422);
-    const gridMat = grid.material as THREE.Material;
-    (gridMat as any).transparent = true;
-    (gridMat as any).opacity = 0.4;
-    group.add(grid);
+    /**
+     * Fusionne la configuration utilisateur avec les valeurs par défaut
+     */
+    private mergeConfig(defaultConfig: RenderConfig, userConfig?: Partial<RenderConfig>): RenderConfig {
+        if (!userConfig) return defaultConfig;
+        
+        return {
+            camera: { ...defaultConfig.camera, ...userConfig.camera },
+            scene: { ...defaultConfig.scene, ...userConfig.scene },
+            lighting: {
+                hemisphereLight: { ...defaultConfig.lighting.hemisphereLight, ...userConfig.lighting?.hemisphereLight },
+                directionalLight: { ...defaultConfig.lighting.directionalLight, ...userConfig.lighting?.directionalLight },
+                ambientLight: { ...defaultConfig.lighting.ambientLight, ...userConfig.lighting?.ambientLight }
+            },
+            shadows: { ...defaultConfig.shadows, ...userConfig.shadows },
+            quality: { ...defaultConfig.quality, ...userConfig.quality },
+            controls: { ...defaultConfig.controls, ...userConfig.controls }
+        };
+    }
 
-    // Sol (disque large, reçoit les ombres)
-    const groundGeo = new THREE.CircleGeometry(90, 72);
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x3a9e4f });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.name = 'Ground';
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    group.add(ground);
+    /**
+     * Crée les métriques de performance initiales
+     */
+    private createInitialMetrics(): PerformanceMetrics {
+        return {
+            fps: 0,
+            frameTime: 0,
+            triangles: 0,
+            geometries: 0,
+            textures: 0,
+            programs: 0
+        };
+    }
 
-    // Aide axes discrète près de l'origine
-    const axes = new THREE.AxesHelper(1.25);
-    axes.position.set(0.7, 0, 0.7);
-    group.add(axes);
+    /**
+     * Crée et configure la scène
+     */
+    private createScene(): THREE.Scene {
+        const scene = new THREE.Scene();
+        const { backgroundColor, fogColor, fogNear, fogFar } = this.config.scene;
+        
+        scene.background = new THREE.Color(backgroundColor);
+        scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+        
+        return scene;
+    }
 
-    this.scene.add(group);
-    this.defaultGroundGroup = group;
-  }
+    /**
+     * Crée et configure la caméra
+     */
+    private createCamera(): THREE.PerspectiveCamera {
+        const { fov, near, far, initialPosition, lookAtTarget } = this.config.camera;
+        
+        const camera = new THREE.PerspectiveCamera(
+            fov,
+            this.container.clientWidth / this.container.clientHeight,
+            near,
+            far
+        );
+        
+        camera.position.copy(initialPosition);
+        camera.lookAt(lookAtTarget);
+        
+        return camera;
+    }
+
+    /**
+     * Crée et configure le renderer avec optimisations
+     */
+    private createRenderer(): THREE.WebGLRenderer {
+        const { antialias, pixelRatio, powerPreference } = this.config.quality;
+        
+        const renderer = new THREE.WebGLRenderer({
+            antialias,
+            powerPreference,
+            preserveDrawingBuffer: false,
+            alpha: false
+        });
+        
+        renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        renderer.setPixelRatio(pixelRatio);
+        
+        // Configuration des ombres
+        if (this.config.shadows.enabled) {
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = this.config.shadows.type;
+            renderer.shadowMap.autoUpdate = true;
+        }
+        
+        // Configuration du rendu moderne
+        this.setupRendererProperties(renderer);
+        
+        this.container.appendChild(renderer.domElement);
+        return renderer;
+    }
+
+    /**
+     * Configure les propriétés avancées du renderer
+     */
+    private setupRendererProperties(renderer: THREE.WebGLRenderer): void {
+        try {
+            // Configuration de l'espace colorimétrique
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            
+            // Optimisations de performance
+            renderer.info.autoReset = false;
+            renderer.sortObjects = true;
+            renderer.autoClear = true;
+            
+        } catch (error) {
+            console.warn('RenderManager: Certaines propriétés avancées du renderer ne sont pas supportées', error);
+        }
+    }
+
+    /**
+     * Crée et configure les contrôles
+     */
+    private createControls(): OrbitControls {
+        const controls = new OrbitControls(this.camera, this.renderer.domElement);
+        const { target, enableDamping, dampingFactor, enableZoom, minDistance, maxDistance } = this.config.controls;
+        
+        controls.target.copy(target);
+        controls.enableDamping = enableDamping;
+        controls.dampingFactor = dampingFactor;
+        controls.enableZoom = enableZoom;
+        controls.minDistance = minDistance;
+        controls.maxDistance = maxDistance;
+        
+        // Configuration des restrictions
+        controls.maxPolarAngle = Math.PI * 0.9; // Empêche de passer sous le sol
+        controls.enablePan = true;
+        controls.keyPanSpeed = 7.0;
+        
+        controls.update();
+        return controls;
+    }
+
+    /**
+     * Configure l'éclairage de la scène
+     */
+    private setupLighting(): void {
+        const { hemisphereLight, directionalLight, ambientLight } = this.config.lighting;
+        
+        // Lumière hémisphérique
+        this.hemisphereLight = new THREE.HemisphereLight(
+            hemisphereLight.skyColor,
+            hemisphereLight.groundColor,
+            hemisphereLight.intensity
+        );
+        this.scene.add(this.hemisphereLight);
+        
+        // Lumière directionnelle avec ombres
+        this.directionalLight = new THREE.DirectionalLight(
+            directionalLight.color,
+            directionalLight.intensity
+        );
+        this.directionalLight.position.copy(directionalLight.position);
+        
+        if (this.config.shadows.enabled) {
+            this.setupDirectionalLightShadows();
+        }
+        
+        this.scene.add(this.directionalLight);
+        
+        // Lumière ambiante
+        this.ambientLight = new THREE.AmbientLight(
+            ambientLight.color,
+            ambientLight.intensity
+        );
+        this.scene.add(this.ambientLight);
+    }
+
+    /**
+     * Configure les ombres de la lumière directionnelle
+     */
+    private setupDirectionalLightShadows(): void {
+        this.directionalLight.castShadow = true;
+        
+        const { mapSize, bias } = this.config.shadows;
+        this.directionalLight.shadow.mapSize.set(mapSize, mapSize);
+        this.directionalLight.shadow.camera.near = 0.5;
+        this.directionalLight.shadow.camera.far = 200;
+        this.directionalLight.shadow.camera.left = -50;
+        this.directionalLight.shadow.camera.right = 50;
+        this.directionalLight.shadow.camera.top = 50;
+        this.directionalLight.shadow.camera.bottom = -50;
+        this.directionalLight.shadow.bias = bias;
+        
+        // Optimisation des ombres
+        this.directionalLight.shadow.radius = 4;
+        this.directionalLight.shadow.blurSamples = 8;
+    }
+
+    /**
+     * Configure la gestion intelligente du redimensionnement
+     */
+    private setupResizeHandling(): void {
+        if (typeof window !== 'undefined' && 'ResizeObserver' in window) {
+            this.resizeObserver = new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    this.onResize(width, height);
+                }
+            });
+            this.resizeObserver.observe(this.container);
+        } else if (typeof window !== 'undefined') {
+            // Fallback pour les navigateurs plus anciens
+            const resizeHandler = () => {
+                this.onResize(this.container.clientWidth, this.container.clientHeight);
+            };
+            (window as any).addEventListener('resize', resizeHandler);
+        }
+    }
+
+    /**
+     * Configure le post-processing (extensible)
+     */
+    private setupPostProcessing(): void {
+        // Prêt pour l'ajout d'effets de post-processing
+        // comme la Bloom, l'SSAO, etc.
+    }
+
+    /**
+     * Gère le redimensionnement avec optimisations
+     */
+    private onResize(width: number, height: number): void {
+        if (this.isDisposed) return;
+        
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(width, height);
+        
+        // Notification d'événement pour les systèmes dépendants
+        this.container.dispatchEvent(new CustomEvent('renderResize', {
+            detail: { width, height, aspect: this.camera.aspect }
+        }));
+    }
+
+    /**
+     * Met à jour les métriques de performance
+     */
+    private updatePerformanceMetrics(deltaTime: number): void {
+        this.frameCount++;
+        
+        if (deltaTime > 0) {
+            this.currentFPS = 1000 / deltaTime;
+        }
+        
+        const info = this.renderer.info;
+        this.performanceMetrics = {
+            fps: this.currentFPS,
+            frameTime: deltaTime,
+            triangles: info.render.triangles,
+            geometries: info.memory.geometries,
+            textures: info.memory.textures,
+            programs: info.programs?.length || 0
+        };
+        
+        // Adaptation automatique de la qualité si activée
+        if (this.config.quality.adaptiveQuality) {
+            this.adaptQuality();
+        }
+    }
+
+    /**
+     * Adapte automatiquement la qualité en fonction des performances
+     */
+    private adaptQuality(): void {
+        const { fps } = this.performanceMetrics;
+        
+        if (fps < 30 && this.renderer.getPixelRatio() > 1) {
+            // Réduire la résolution si les performances sont faibles
+            this.renderer.setPixelRatio(Math.max(1, this.renderer.getPixelRatio() - 0.25));
+        } else if (fps > 55 && this.renderer.getPixelRatio() < this.config.quality.pixelRatio) {
+            // Augmenter la résolution si les performances le permettent
+            this.renderer.setPixelRatio(Math.min(this.config.quality.pixelRatio, this.renderer.getPixelRatio() + 0.25));
+        }
+    }
+
+    /**
+     * Effectue un cycle de rendu optimisé
+     */
+    public render(deltaTime?: number): void {
+        if (this.isDisposed) return;
+        
+        const currentTime = performance.now();
+        const actualDeltaTime = deltaTime || (currentTime - this.lastTime);
+        
+        // Mise à jour des contrôles
+        this.controls.update();
+        
+        // Rendu de la scène
+        this.renderer.render(this.scene, this.camera);
+        
+        // Mise à jour des métriques
+        this.updatePerformanceMetrics(actualDeltaTime);
+        
+        this.lastTime = currentTime;
+    }
+
+    /**
+     * Ajoute le sol et la grille par défaut avec optimisations
+     */
+    public ensureGroundAndGrid(): void {
+        if (this.isDisposed) return;
+        
+        const existingGround = this.scene.getObjectByName('Ground');
+        if (existingGround) {
+            // Un environnement gère déjà le sol/grille
+            if (this.defaultGroundGroup) {
+                this.scene.remove(this.defaultGroundGroup);
+                this.disposeGroup(this.defaultGroundGroup);
+                this.defaultGroundGroup = null;
+            }
+            return;
+        }
+
+        if (this.defaultGroundGroup) return; // Déjà ajouté
+
+        this.defaultGroundGroup = this.createDefaultGround();
+        this.scene.add(this.defaultGroundGroup);
+    }
+
+    /**
+     * Crée le sol et la grille par défaut
+     */
+    private createDefaultGround(): THREE.Group {
+        const group = new THREE.Group();
+        group.name = 'DefaultGroundGroup';
+
+        // Grille optimisée
+        const grid = new THREE.GridHelper(120, 120, 0x335533, 0x224422);
+        const gridMaterial = grid.material as THREE.Material;
+        gridMaterial.transparent = true;
+        gridMaterial.opacity = 0.4;
+        group.add(grid);
+
+        // Sol avec ombres
+        const groundGeometry = new THREE.CircleGeometry(90, 72);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x3a9e4f });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.name = 'Ground';
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        group.add(ground);
+
+        // Axes de repère discrets
+        const axes = new THREE.AxesHelper(1.25);
+        axes.position.set(0.7, 0, 0.7);
+        group.add(axes);
+
+        return group;
+    }
+
+    /**
+     * Obtient les métriques de performance actuelles
+     */
+    public getPerformanceMetrics(): PerformanceMetrics {
+        return { ...this.performanceMetrics };
+    }
+
+    /**
+     * Obtient les informations du renderer
+     */
+    public getRendererInfo(): THREE.WebGLInfo {
+        return this.renderer.info;
+    }
+
+    /**
+     * Met à jour la configuration
+     */
+    public updateConfig(newConfig: Partial<RenderConfig>): void {
+        if (this.isDisposed) return;
+        
+        Object.assign(this.config, newConfig);
+        
+        // Appliquer les changements
+        if (newConfig.quality?.pixelRatio) {
+            this.renderer.setPixelRatio(newConfig.quality.pixelRatio);
+        }
+        
+        if (newConfig.shadows?.enabled !== undefined) {
+            this.renderer.shadowMap.enabled = newConfig.shadows.enabled;
+        }
+    }
+
+    /**
+     * Nettoie proprement un groupe Three.js
+     */
+    private disposeGroup(group: THREE.Group): void {
+        group.traverse((object) => {
+            if (object instanceof THREE.Mesh) {
+                object.geometry.dispose();
+                if (Array.isArray(object.material)) {
+                    object.material.forEach(material => material.dispose());
+                } else {
+                    object.material.dispose();
+                }
+            }
+        });
+    }
+
+    /**
+     * Nettoie toutes les ressources
+     */
+    public dispose(): void {
+        if (this.isDisposed) return;
+        
+        this.isDisposed = true;
+        
+        // Arrêter les animations
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+        }
+        
+        // Nettoyer les observateurs
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+        }
+        
+        // Nettoyer les contrôles
+        this.controls.dispose();
+        
+        // Nettoyer le renderer
+        this.renderer.dispose();
+        
+        // Nettoyer les caches
+        this.shaderCache.clear();
+        this.textureCache.forEach(texture => texture.dispose());
+        this.textureCache.clear();
+        
+        // Nettoyer le sol par défaut
+        if (this.defaultGroundGroup) {
+            this.disposeGroup(this.defaultGroundGroup);
+        }
+        
+        // Nettoyer la scène complètement
+        this.scene.traverse((object) => {
+            if (object instanceof THREE.Mesh) {
+                object.geometry.dispose();
+                if (Array.isArray(object.material)) {
+                    object.material.forEach(material => material.dispose());
+                } else {
+                    object.material.dispose();
+                }
+            }
+        });
+        
+        this.scene.clear();
+        
+        // Retirer le canvas du DOM
+        if (this.renderer.domElement.parentNode) {
+            this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+        }
+    }
 }
 

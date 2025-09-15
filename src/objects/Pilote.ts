@@ -7,8 +7,8 @@
  */
 
 import * as THREE from 'three';
-import { ControlBar3D } from './controlbar';
-import { C_objet, C_objetConfig } from './C_objet';
+import { ControlBar3D } from './components/controlbar';
+import { C_objet, C_objetConfig } from '../class/C_objet';
 
 // Position fixe du pilote (référence principale)
 export const PILOTE_POSITION = new THREE.Vector3(0, 0.8, 8.5);
@@ -63,13 +63,13 @@ export class Pilote3D extends C_objet {
      * Crée la barre de contrôle comme objet enfant
      */
     private createControlBar(): void {
-        this.controlBar = new ControlBar3D();
+    this.controlBar = new ControlBar3D();
 
-        // Positionne la barre relativement au pilote (aux mains)
-        this.controlBar.getGroup().position.copy(BARRE_OFFSET);
+    // Positionne la barre relativement au pilote (aux mains)
+    this.controlBar.getGroup().position.copy(BARRE_OFFSET);
 
-        // Ajoute la barre au groupe du pilote
-        this.group.add(this.controlBar.getGroup());
+    // Ajoute la barre au groupe du pilote
+    this.group.add(this.controlBar.getGroup());
     }
 
     /**
@@ -99,9 +99,20 @@ export class Pilote3D extends C_objet {
     }
 
     /**
+     * Retourne la position mondiale d'une poignée de la barre de contrôle
+     */
+    public getHandleWorldPosition(side: 'left' | 'right', rotation: number): THREE.Vector3 {
+        if (side === 'left') {
+            return this.controlBar.getLeftWorldPosition();
+        } else {
+            return this.controlBar.getRightWorldPosition();
+        }
+    }
+
+    /**
      * Retourne la position actuelle du pilote
      */
-    public getPosition(): THREE.Vector3 {
+    public get_position(): THREE.Vector3 {
         return this.group.position.clone();
     }
 
@@ -116,8 +127,8 @@ export class Pilote3D extends C_objet {
      * Retourne la position de la barre de contrôle dans l'espace monde
      */
     public getControlBarWorldPosition(): THREE.Vector3 {
-        const worldPos = new THREE.Vector3();
-        this.controlBar.getGroup().getWorldPosition(worldPos);
+    const worldPos = new THREE.Vector3();
+    this.controlBar.getGroup().getWorldPosition(worldPos);
         return worldPos;
     }
 
@@ -131,10 +142,10 @@ export class Pilote3D extends C_objet {
     /**
      * Nettoie les ressources
      */
-    public dispose(): void {
+    public queue_free(): void {
         // Nettoie la barre de contrôle
         if (this.controlBar) {
-            this.controlBar.dispose();
+            this.controlBar.queue_free();
         }
 
         // Nettoie le pilote

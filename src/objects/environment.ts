@@ -9,7 +9,7 @@
  */
 
 import * as THREE from 'three';
-import { C_objet, C_objetConfig } from './C_objet';
+import { C_objet, C_objetConfig } from '../class/C_objet';
 
 export class Environment extends C_objet {
   // Eléments

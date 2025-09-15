@@ -52,11 +52,11 @@ export class CompactUI {
                             background: #10b981;
                             box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
                         "></div>
-                        <span style="color: #f1f5f9; font-weight: 600; font-size: 14px;">🪁 Kite Sim</span>
+                        <span style="color: #f1f5f9; font-weight: 600; font-size: 12px;">🪁 Kite Sim</span>
                     </div>
                     <span id="toggle-btn" style="
                         color: #64748b;
-                        font-size: 16px;
+                        font-size: 12px;
                         transform: rotate(0deg);
                         transition: transform 0.3s ease;
                     ">◀</span>
@@ -77,22 +77,22 @@ export class CompactUI {
                         ">
                             <div style="text-align: center;">
                                 <label style="color: #cbd5e1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Vent</label>
-                                <div style="color: #f1f5f9; font-weight: 600; font-size: 16px;" id="wind-speed-display">${CONFIG.wind.defaultSpeed}</div>
+                                <div style="color: #f1f5f9; font-weight: 600; font-size: 13px;" id="wind-speed-display">${CONFIG.wind.defaultSpeed}</div>
                                 <div style="color: #64748b; font-size: 10px;">km/h</div>
                             </div>
                             <div style="text-align: center;">
                                 <label style="color: #cbd5e1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Dir</label>
-                                <div style="color: #f1f5f9; font-weight: 600; font-size: 16px;" id="wind-dir-display">${CONFIG.wind.defaultDirection}</div>
+                                <div style="color: #f1f5f9; font-weight: 600; font-size: 13px;" id="wind-dir-display">${CONFIG.wind.defaultDirection}</div>
                                 <div style="color: #64748b; font-size: 10px;">°</div>
                             </div>
                             <div style="text-align: center;">
                                 <label style="color: #cbd5e1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Turb</label>
-                                <div style="color: #f1f5f9; font-weight: 600; font-size: 16px;" id="turb-display">${CONFIG.wind.defaultTurbulence}</div>
+                                <div style="color: #f1f5f9; font-weight: 600; font-size: 13px;" id="turb-display">${CONFIG.wind.defaultTurbulence}</div>
                                 <div style="color: #64748b; font-size: 10px;">%</div>
                             </div>
                             <div style="text-align: center;">
                                 <label style="color: #cbd5e1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Lignes</label>
-                                <div style="color: #f1f5f9; font-weight: 600; font-size: 16px;" id="lines-display">${CONFIG.lines.defaultLength}</div>
+                                <div style="color: #f1f5f9; font-weight: 600; font-size: 13px;" id="lines-display">${CONFIG.lines.defaultLength}</div>
                                 <div style="color: #64748b; font-size: 10px;">m</div>
                             </div>
                         </div>
@@ -197,6 +197,25 @@ export class CompactUI {
                             box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
                         " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
                             🔍 Debug
+                        </button>
+                    </div>
+
+                    <!-- Bouton de switch vers CAO -->
+                    <div style="margin-bottom: 12px;">
+                        <button id="switch-to-cao" style="
+                            background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+                            border: none;
+                            border-radius: 8px;
+                            color: white;
+                            padding: 10px 12px;
+                            font-size: 12px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                            width: 100%;
+                            box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);
+                        " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                            🔧 Mode CAO
                         </button>
                     </div>
 
@@ -367,6 +386,14 @@ export class CompactUI {
                 this.simulation.toggleDebugMode();
             };
         }
+
+        // Bouton de switch vers CAO
+        const switchCaoBtn = document.getElementById('switch-to-cao');
+        if (switchCaoBtn) {
+            switchCaoBtn.onclick = () => {
+                this.switchToMode('cao');
+            };
+        }
     }
 
     public updateUI(frameCount: number, position: { x: number, y: number, z: number }, velocity: number, isPlaying: boolean, debugMode: boolean = false): void {
@@ -402,6 +429,25 @@ export class CompactUI {
                 ? '0 2px 8px rgba(16, 185, 129, 0.4)'
                 : '0 2px 8px rgba(124, 58, 237, 0.3)';
         }
+    }
+
+    /**
+     * Bascule vers un autre mode (simulation ou cao)
+     */
+    private switchToMode(mode: 'simulation' | 'cao'): void {
+        // Construire la nouvelle URL
+        const currentUrl = new URL(window.location.href);
+
+        if (mode === 'simulation') {
+            // Supprimer le paramètre mode pour revenir au mode par défaut
+            currentUrl.searchParams.delete('mode');
+        } else {
+            // Ajouter le paramètre mode=cao
+            currentUrl.searchParams.set('mode', mode);
+        }
+
+        // Rediriger vers la nouvelle URL
+        window.location.href = currentUrl.toString();
     }
 
     public destroy(): void {

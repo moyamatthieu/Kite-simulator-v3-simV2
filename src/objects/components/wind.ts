@@ -9,7 +9,7 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '@core/constants';
-import { C_objet, C_objetConfig } from './C_objet';
+import { C_objet, C_objetConfig } from '../../class/C_objet';
 
 export class WindSimulator extends C_objet {
   private speed: number; // m/s

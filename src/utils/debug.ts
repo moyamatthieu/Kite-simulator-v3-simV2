@@ -19,10 +19,10 @@ export function generateId(): string {
  */
 
 import * as THREE from 'three';
-import { PhysicsConstants, CONFIG } from '@core/constants';
-import { Kite } from '@objects/Kite';
-import { WindSimulator } from '@physics/WindSimulator';
-import { LineSystem } from '@objects/lines';
+import { PhysicsConstants, CONFIG } from '../core/constants';
+import { Kite } from '../objects/Kite';
+import { WindSimulator } from '../physics/WindSimulator';
+import { LineSystem } from '../objects/components/lines';
 
 // Constantes pour la visualisation des vecteurs de debug
 const VECTOR_VISUAL_SCALE = 0.8;
@@ -348,9 +348,10 @@ export class DebugVisualizer {
 
     // Tension des lignes
     if (data.lineForces.leftForce.length() > 0) {
-      const leftAttach = kite.getPoint('CTRL_GAUCHE');
+  const leftAttach = kite.getPoint('CTRL_GAUCHE');
       if (leftAttach) {
-        const leftWorld = leftAttach.clone().applyQuaternion(kite.group.quaternion).add(kite.group.position);
+  const leftLocal = (leftAttach as any).get_position ? (leftAttach as any).get_position() : leftAttach as unknown as THREE.Vector3;
+  const leftWorld = leftLocal.clone().applyQuaternion(kite.group.quaternion).add(kite.group.position);
         this.leftLineArrow.position.copy(leftWorld);
         this.leftLineArrow.setDirection(data.lineForces.leftForce.clone().normalize());
         this.leftLineArrow.setLength(Math.min(data.lineForces.leftForce.length() * 0.01, 1));
@@ -360,9 +361,10 @@ export class DebugVisualizer {
     }
 
     if (data.lineForces.rightForce.length() > 0) {
-      const rightAttach = kite.getPoint('CTRL_DROIT');
+        const rightAttach = kite.getPoint('CTRL_DROIT');
       if (rightAttach) {
-        const rightWorld = rightAttach.clone().applyQuaternion(kite.group.quaternion).add(kite.group.position);
+        const rightLocal = (rightAttach as any).get_position ? (rightAttach as any).get_position() : rightAttach as unknown as THREE.Vector3;
+        const rightWorld = rightLocal.clone().applyQuaternion(kite.group.quaternion).add(kite.group.position);
         this.rightLineArrow.position.copy(rightWorld);
         this.rightLineArrow.setDirection(data.lineForces.rightForce.clone().normalize());
         this.rightLineArrow.setLength(Math.min(data.lineForces.rightForce.length() * 0.01, 1));

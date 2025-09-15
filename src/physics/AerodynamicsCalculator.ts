@@ -9,16 +9,85 @@
  */
 
 import * as THREE from 'three';
-import { PhysicsConstants, CONFIG, AerodynamicForces, SimulationMetrics } from '@core/constants';
-import { Kite, KiteGeometry } from '@objects/Kite';
+import { PhysicsConstants, CONFIG, AerodynamicForces, SimulationMetrics } from '../core/constants';
+import { Kite, KiteGeometry } from '../objects/Kite';
+
+// Configuration de debug (désactivée pour réduire le spam)
+const DEBUG_ENABLED = false; // Mettre à true pour activer le debug
+const DEBUG_VERBOSE = false; // Debug très détaillé (pour développement uniquement)
+
+// Debug initial uniquement si activé
+if (DEBUG_ENABLED && DEBUG_VERBOSE) {
+  console.log('🔧 AerodynamicsCalculator.ts loaded');
+  console.log('🗺️ KiteGeometry available:', typeof KiteGeometry);
+  console.log('📍 KiteGeometry.POINTS type:', typeof KiteGeometry.POINTS);
+  console.log('📊 KiteGeometry.POINTS size:', KiteGeometry.POINTS?.size);
+  console.log('📐 KiteGeometry.SURFACES length:', KiteGeometry.SURFACES?.length);
+}
+
+// Définition locale de secours au cas où l'import ne marcherait pas
+const LOCAL_POINTS = new Map<string, [number, number, number]>([
+    ['SPINE_BAS', [0, 0, 0]],
+    ['NEZ', [0, 0.65, 0]],
+    ['BORD_GAUCHE', [-0.825, 0, 0]],
+    ['BORD_DROIT', [0.825, 0, 0]],
+    ['WHISKER_GAUCHE', [-0.4125, 0.1, -0.15]],
+    ['WHISKER_DROIT', [0.4125, 0.1, -0.15]],
+    ['CTRL_GAUCHE', [-0.15, 0.3, 0.4]],
+    ['CTRL_DROIT', [0.15, 0.3, 0.4]]
+]);
+
+const LOCAL_SURFACES = [
+    { vertices: ['NEZ', 'BORD_GAUCHE', 'WHISKER_GAUCHE'], area: 0.23 },
+    { vertices: ['NEZ', 'WHISKER_GAUCHE', 'SPINE_BAS'], area: 0.11 },
+    { vertices: ['NEZ', 'BORD_DROIT', 'WHISKER_DROIT'], area: 0.23 },
+    { vertices: ['NEZ', 'WHISKER_DROIT', 'SPINE_BAS'], area: 0.11 }
+];
 
 /**
  * Fonction utilitaire pour obtenir les vertices réels d'une surface
  */
 function getSurfaceVertices(surface: any): [THREE.Vector3, THREE.Vector3, THREE.Vector3] {
-    const vertex0 = KiteGeometry.POINTS[surface.vertices[0] as keyof typeof KiteGeometry.POINTS];
-    const vertex1 = KiteGeometry.POINTS[surface.vertices[1] as keyof typeof KiteGeometry.POINTS];
-    const vertex2 = KiteGeometry.POINTS[surface.vertices[2] as keyof typeof KiteGeometry.POINTS];
+    if (DEBUG_VERBOSE) {
+        console.log('🔍 getSurfaceVertices called with surface:', surface);
+        console.log('📍 Surface vertices:', surface.vertices);
+    }
+
+    // Essayer d'abord avec KiteGeometry importé
+    let pointsMap = KiteGeometry?.POINTS;
+    if (!pointsMap || typeof pointsMap.get !== 'function') {
+        if (DEBUG_ENABLED) {
+            console.warn('⚠️ KiteGeometry.POINTS not available, using local fallback');
+        }
+        pointsMap = LOCAL_POINTS;
+    }
+
+    const vertex0Coords = pointsMap.get(surface.vertices[0]);
+    const vertex1Coords = pointsMap.get(surface.vertices[1]);
+    const vertex2Coords = pointsMap.get(surface.vertices[2]);
+
+    if (DEBUG_VERBOSE) {
+        console.log('📊 Vertex coords:', { vertex0Coords, vertex1Coords, vertex2Coords });
+    }
+
+    if (!vertex0Coords || !vertex1Coords || !vertex2Coords) {
+        console.error('❌ Missing vertex coordinates for surface vertices:', surface.vertices);
+        // Fallback avec des valeurs par défaut
+        return [
+            new THREE.Vector3(0, 0.65, 0),  // NEZ
+            new THREE.Vector3(-0.825, 0, 0), // BORD_GAUCHE
+            new THREE.Vector3(-0.4125, 0.1, -0.15) // WHISKER_GAUCHE
+        ];
+    }
+
+    const vertex0 = new THREE.Vector3(...vertex0Coords);
+    const vertex1 = new THREE.Vector3(...vertex1Coords);
+    const vertex2 = new THREE.Vector3(...vertex2Coords);
+
+    if (DEBUG_VERBOSE) {
+        console.log('✅ Returning vertices:', { vertex0, vertex1, vertex2 });
+    }
+
     return [vertex0, vertex1, vertex2];
 }
 
@@ -115,8 +184,11 @@ export class AerodynamicsCalculator {
                 return; // Face non contributive
             }
 
+            // Calcul de l'aire de la surface depuis les vertices
+            const surfaceArea = 0.5 * new THREE.Vector3().crossVectors(edge1, edge2).length();
+
             // ÉTAPE 4 : Force aérodynamique avec effet d'extrados
-            let forceMagnitude = dynamicPressure * surface.area * cosIncidence;
+            let forceMagnitude = dynamicPressure * surfaceArea * cosIncidence;
 
             // EFFET D'EXTRADOS : Augmentation de portance sur la face supérieure
             // L'extrados génère plus de portance due à l'effet Venturi
@@ -157,7 +229,7 @@ export class AerodynamicsCalculator {
             }
 
             const centreWorld = centreLocal.clone().applyQuaternion(kiteOrientation)
-                .add(kite ? kite.getPosition() : new THREE.Vector3());
+                .add(kite ? kite.get_position() : new THREE.Vector3());
 
             // ÉTAPE 6 : Classification gauche/droite avec précision
             const isLeft = centreLocal.x < -0.01;  // Tolérance pour éviter les ambiguïtés
@@ -174,12 +246,12 @@ export class AerodynamicsCalculator {
             }
 
             // ÉTAPE 7 : Couple avec bras de levier spécifique
-            const centerOfMass = kite ? kite.getPosition() : new THREE.Vector3();
+            const centerOfMass = kite ? kite.get_position() : new THREE.Vector3();
             const leverArm = centreWorld.clone().sub(centerOfMass);
             const torque = new THREE.Vector3().crossVectors(leverArm, force);
 
             // Accumulation avec poids selon l'importance de la face
-            const faceWeight = surface.area / KiteGeometry.TOTAL_AREA;
+            const faceWeight = surfaceArea / KiteGeometry.TOTAL_AREA;
             totalForce.add(force.clone().multiplyScalar(faceWeight));
             totalTorque.add(torque.clone().multiplyScalar(faceWeight));
         });
@@ -220,6 +292,12 @@ export class AerodynamicsCalculator {
         kiteOrientation: THREE.Quaternion,
         kite?: Kite
     ): { forces: AerodynamicForces; surfaceDetails: SurfaceForceDetail[] } {
+        console.log('🚀 calculateForcesWithNormals called');
+        console.log('💨 apparentWind:', apparentWind);
+        console.log('🎯 kiteOrientation:', kiteOrientation);
+        console.log('🗺️ KiteGeometry.POINTS size:', KiteGeometry.POINTS.size);
+        console.log('📐 KiteGeometry.SURFACES length:', KiteGeometry.SURFACES.length);
+
         const windSpeed = apparentWind.length();
         if (windSpeed < PhysicsConstants.EPSILON) {
             return {
@@ -278,8 +356,11 @@ export class AerodynamicsCalculator {
             const cd = 0.1 + 0.1 * Math.sin(aoa_rad) * Math.sin(aoa_rad); // Coefficient de traînée simplifié
             const aoa_deg = (Math.asin(facing) - Math.PI / 2) * 180 / Math.PI;
 
+            // Calcul de l'aire de la surface depuis les vertices
+            const surfaceArea = 0.5 * new THREE.Vector3().crossVectors(edge1, edge2).length();
+
             // Force aérodynamique avec effet d'extrados
-            let forceMagnitude = dynamicPressure * surface.area * cosIncidence;
+            let forceMagnitude = dynamicPressure * surfaceArea * cosIncidence;
 
             // EFFET D'EXTRADOS : Augmentation de portance sur la face supérieure
             // L'extrados génère plus de portance due à l'effet Venturi
@@ -307,13 +388,13 @@ export class AerodynamicsCalculator {
             }
 
             const centreWorld = centreLocal.clone().applyQuaternion(kiteOrientation)
-                .add(kite ? kite.getPosition() : new THREE.Vector3());
+                .add(kite ? kite.get_position() : new THREE.Vector3());
 
             // Classification et contribution
             const isLeft = centreLocal.x < -0.01;
             const isRight = centreLocal.x > 0.01;
             const facePosition = faceCenterZ > 0.01 ? 'avant' : (faceCenterZ < -0.01 ? 'arriere' : 'centre');
-            const contribution = surface.area / KiteGeometry.TOTAL_AREA;
+            const contribution = surfaceArea / KiteGeometry.TOTAL_AREA;
 
             if (isLeft) {
                 leftForce.add(force);
@@ -325,7 +406,7 @@ export class AerodynamicsCalculator {
             }
 
             // Couple
-            const centerOfMass = kite ? kite.getPosition() : new THREE.Vector3();
+            const centerOfMass = kite ? kite.get_position() : new THREE.Vector3();
             const leverArm = centreWorld.clone().sub(centerOfMass);
             const torque = new THREE.Vector3().crossVectors(leverArm, force);
 
@@ -404,8 +485,11 @@ export class AerodynamicsCalculator {
             const facing = windDir.dot(normaleMonde);
             const cosIncidence = Math.max(0, Math.abs(facing));
 
+            // Calcul de l'aire de la surface depuis les vertices
+            const surfaceArea = 0.5 * new THREE.Vector3().crossVectors(edge1, edge2).length();
+
             const normalDir = facing >= 0 ? normaleMonde : normaleMonde.clone().negate();
-            weightedNormal.add(normalDir.multiplyScalar(surface.area * cosIncidence));
+            weightedNormal.add(normalDir.multiplyScalar(surfaceArea * cosIncidence));
         });
 
         let aoaDeg = 0;

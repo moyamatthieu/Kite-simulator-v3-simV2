@@ -42,12 +42,13 @@ export class KiteController {
     constructor(kite: Kite) {
         this.kite = kite;
         this.state = {
-            position: kite.getPosition().clone(),
+            position: kite.get_position().clone(),
             velocity: new THREE.Vector3(),
             angularVelocity: new THREE.Vector3(),
+            // orientation is stored as a quaternion
             orientation: kite.getRotation().clone()
         };
-        this.previousPosition = kite.getPosition().clone();
+        this.previousPosition = kite.get_position().clone();
         this.kite.userData.lineLength = CONFIG.lines.defaultLength;
 
         // Initialiser les forces lissées
@@ -88,7 +89,7 @@ export class KiteController {
         this.validatePosition(newPosition);
 
         // Appliquer la position finale
-        this.kite.getPosition().copy(newPosition);
+        this.kite.get_position().copy(newPosition);
         this.previousPosition.copy(newPosition);
 
         // Mise à jour de l'orientation avec le couple lissé
@@ -149,7 +150,7 @@ export class KiteController {
         }
 
         // Position : x(t+dt) = x(t) + v·dt
-        return this.kite.getPosition().clone()
+        return this.kite.get_position().clone()
             .add(this.state.velocity.clone().multiplyScalar(deltaTime));
     }
 
@@ -161,11 +162,11 @@ export class KiteController {
 
         // Utiliser les points de géométrie du kite pour une collision précise
         const kitePoints = [
-            this.kite.getPoint('NEZ'),
-            this.kite.getPoint('SPINE_BAS'),
-            this.kite.getPoint('BORD_GAUCHE'),
-            this.kite.getPoint('BORD_DROIT')
-        ].filter(point => point !== undefined) as THREE.Vector3[];
+            this.kite.getPointPosition('NEZ'),
+            this.kite.getPointPosition('SPINE_BAS'),
+            this.kite.getPointPosition('BORD_GAUCHE'),
+            this.kite.getPointPosition('BORD_DROIT')
+        ].filter(point => point !== null) as THREE.Vector3[];
 
         if (kitePoints.length > 0) {
             let minY = Infinity;
@@ -243,8 +244,11 @@ export class KiteController {
             const angle = this.state.angularVelocity.length() * deltaTime;
             deltaRotation.setFromAxisAngle(axis, angle);
 
-            this.kite.getRotation().multiply(deltaRotation);
-            this.kite.getRotation().normalize();
+            // Appliquer directement sur la quaternion du groupe
+            this.kite.get_group().quaternion.multiply(deltaRotation);
+            this.kite.get_group().quaternion.normalize();
+            // Mettre à jour l'état
+            this.state.orientation.copy(this.kite.get_group().quaternion);
         }
     }
 
@@ -303,7 +307,7 @@ export class KiteController {
      * Met à jour la position du kite (pour synchronisation externe)
      */
     updatePosition(newPosition: THREE.Vector3): void {
-        this.kite.getPosition().copy(newPosition);
+        this.kite.get_position().copy(newPosition);
         this.previousPosition.copy(newPosition);
         this.state.position.copy(newPosition);
     }
@@ -312,7 +316,7 @@ export class KiteController {
      * Met à jour l'orientation du kite (pour synchronisation externe)
      */
     updateOrientationExternal(newQuaternion: THREE.Quaternion): void {
-        this.kite.getRotation().copy(newQuaternion);
-        this.state.orientation.copy(newQuaternion);
+    this.kite.get_group().quaternion.copy(newQuaternion);
+    this.state.orientation.copy(newQuaternion);
     }
 }
